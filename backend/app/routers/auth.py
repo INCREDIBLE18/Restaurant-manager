@@ -46,7 +46,13 @@ def check_password_strength(pw: str):
 
 @router.get("/auth/status")
 def status(db: Session = Depends(get_db)):
-    return {"needs_setup": db.query(User).count() == 0}
+    s = get_settings()
+    return {
+        "needs_setup": db.query(User).count() == 0,
+        "neon_auth": bool(s.neon_auth_base_url),
+        "neon_auth_base_url": s.neon_auth_base_url or None,
+    }
+
 
 
 @router.post("/auth/bootstrap")

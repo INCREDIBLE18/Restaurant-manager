@@ -63,6 +63,7 @@ def make_engine(url: str | None = None):
 
 
 engine = make_engine()
+unpooled_engine = make_engine(get_settings().database_url_unpooled) if get_settings().database_url_unpooled else engine
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

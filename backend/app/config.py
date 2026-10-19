@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(ROOT / ".env"), extra="ignore", env_ignore_empty=True)
 
     database_url: str = f"sqlite:///{(ROOT / 'data' / 'restaurant.db').as_posix()}"
+    database_url_unpooled: str = ""
+    neon_branch: str = "production"
+    neon_auth_base_url: str = ""
+    neon_auth_jwks_url: str = ""
     secret_key: str = "change-me-in-env"
     token_ttl_hours: int = 12
     cors_origins: str = "*"

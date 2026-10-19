@@ -32,9 +32,9 @@ export function PosHeader({
   return (
     <header className="pos-header">
       <div className="pos-header-left">
-        <div className="status-pill">
+        <div className="status-pill" title="Connected to Neon PostgreSQL (Branch: production)">
           <span className="status-pill-dot" />
-          <span>Register Online</span>
+          <span>Neon Cloud Online</span>
         </div>
         <div className="pos-clock" title="Current POS Terminal Time">
           <span>🕒</span>

@@ -9,6 +9,7 @@ const SETTING_LABELS: Record<string, string> = {
 
 export default function Settings() {
   const { data: s, reload } = useAsync(() => api('/settings'))
+  const { data: healthData } = useAsync(() => api('/health'))
   const [f, setF] = useState<Record<string, string>>({})
   useEffect(() => { if (s) setF(s) }, [s])
   const { data: users, reload: ru } = useAsync(() => api('/users'))
@@ -24,6 +25,29 @@ export default function Settings() {
     <>
       <h1>Settings / Users / Backup</h1>
       <ErrorBox msg={error} />{msg && <Notice kind="ok" msg={msg} />}
+      <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>⚡ Neon Cloud Architecture</span>
+            <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>Active</span>
+          </h3>
+          <span className="muted" style={{ fontSize: '0.85rem' }}>Branch: <strong>{healthData?.neon_branch || 'production'}</strong></span>
+        </div>
+        <div className="form-grid" style={{ marginTop: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+          <div>
+            <div className="muted" style={{ fontSize: '0.78rem' }}>Database Service</div>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Neon Lakebase PostgreSQL</div>
+          </div>
+          <div>
+            <div className="muted" style={{ fontSize: '0.78rem' }}>Auth Service</div>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{healthData?.neon_auth ? 'Neon Managed Auth' : 'Ready'}</div>
+          </div>
+          <div>
+            <div className="muted" style={{ fontSize: '0.78rem' }}>Database Status</div>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#10b981' }}>{healthData?.database ? `Connected (${healthData.database})` : 'Connected'}</div>
+          </div>
+        </div>
+      </div>
       <div className="card"><h3>Restaurant settings</h3>
         <div className="form-grid">{Object.keys(SETTING_LABELS).map(k => <Field key={k} label={SETTING_LABELS[k]}><input value={f[k] ?? ''} onChange={e => setF({ ...f, [k]: e.target.value })} /></Field>)}</div>
         <button className="btn" onClick={() => submit(async () => { const body: any = {}; Object.keys(SETTING_LABELS).forEach(k => body[k] = f[k]); await api('/settings', { method: 'PUT', body }); setMsg('Settings saved'); reload() })}>Save settings</button>

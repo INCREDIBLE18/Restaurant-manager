@@ -41,9 +41,9 @@ def init_defaults(db):
 async def lifespan(_app):
     with SessionLocal() as db:
         try:
-            from .db import Base, engine
-            # Auto-create tables if running on fresh database (e.g. Neon PostgreSQL)
-            Base.metadata.create_all(bind=engine)
+            from .db import Base, unpooled_engine
+            # Auto-create tables if running on fresh database (e.g. Neon PostgreSQL) using direct connection
+            Base.metadata.create_all(bind=unpooled_engine)
             init_defaults(db)
         except Exception as ex:
             log.error("Startup database initialization failed: %s", ex)
@@ -80,8 +80,21 @@ for r in (auth, udhari, money, stock, reporting):
 def health():
     from sqlalchemy import text
     with SessionLocal() as db:
-        db.execute(text("select 1"))
-    return {"status": "ok", "db": "connected"}
+        if db.bind.dialect.name == "postgresql":
+            res = db.execute(text("SELECT current_database(), current_user, version()")).fetchone()
+            dbname = res[0] if res else "connected"
+        else:
+            db.execute(text("SELECT 1"))
+            dbname = "connected"
+    cfg = get_settings()
+    return {
+        "status": "ok",
+        "database": dbname,
+        "neon_branch": cfg.neon_branch or "production",
+        "neon_auth": bool(cfg.neon_auth_base_url),
+        "auth_base_url": cfg.neon_auth_base_url or None,
+    }
+
 
 
 @app.exception_handler(RequestValidationError)
