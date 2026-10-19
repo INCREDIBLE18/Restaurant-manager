@@ -7,7 +7,25 @@ Assumptions: [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) · Plan/status: [`IMPL
 
 Stack: FastAPI + SQLAlchemy 2 + Alembic (SQLite by default, PostgreSQL-capable) · React + TypeScript + Vite · local OCR (RapidOCR/ONNX).
 
-## Run with Docker (Fastest Deployment)
+## Deploy on Vercel with Neon DB (Serverless Cloud)
+This repository is **100% Vercel and Neon DB ready**! Both the React frontend and Python FastAPI backend deploy together into a single project.
+
+### 1. Create a Neon Database (Free)
+1. Go to [neon.tech](https://neon.tech) and create a database (e.g. `restaurant-db`).
+2. Copy the connection string:
+   `postgresql://username:password@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require`
+
+### 2. Import & Deploy on Vercel
+1. Go to [vercel.com](https://vercel.com) and click **Add New Project**.
+2. Select **`INCREDIBLE18/Restaurant-manager`**.
+3. Add these **Environment Variables**:
+   * `DATABASE_URL`: Your Neon PostgreSQL connection string from step 1.
+   * `SECRET_KEY`: Any secure random secret string (e.g. 64 characters).
+4. Click **Deploy**!
+
+> **Note**: Database tables, default accounts, and settings are created automatically on the first request. The first user to sign in becomes the owner/admin.
+
+## Run with Docker (Fastest Local/Server Deployment)
 Run the entire stack (FastAPI backend + built React POS frontend + SQLite persistence) with a single command:
 ```bash
 docker compose up -d --build

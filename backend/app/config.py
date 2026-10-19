@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -7,13 +8,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=str(ROOT / ".env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(ROOT / ".env"), extra="ignore", env_ignore_empty=True)
 
     database_url: str = f"sqlite:///{(ROOT / 'data' / 'restaurant.db').as_posix()}"
     secret_key: str = "change-me-in-env"
     token_ttl_hours: int = 12
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-    data_dir: str = str(ROOT / "data")
+    cors_origins: str = "*"
+    data_dir: str = "/tmp/data" if os.environ.get("VERCEL") else str(ROOT / "data")
     max_upload_mb: int = 15
     gemini_api_key: str = ""
     gemini_enabled: bool = False

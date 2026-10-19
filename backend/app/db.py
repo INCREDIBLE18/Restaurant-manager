@@ -36,9 +36,20 @@ class Base(DeclarativeBase):
 
 def make_engine(url: str | None = None):
     url = url or get_settings().database_url
+    # Normalize postgres:// to postgresql:// (Neon / Supabase / cloud providers)
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+
     kwargs = {}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        # Optimized pooling for Neon serverless Postgres
+        kwargs["pool_pre_ping"] = True
+        kwargs["pool_recycle"] = 300
+        kwargs["pool_size"] = 5
+        kwargs["max_overflow"] = 10
+
     eng = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
 

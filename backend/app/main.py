@@ -41,16 +41,20 @@ def init_defaults(db):
 async def lifespan(_app):
     with SessionLocal() as db:
         try:
+            from .db import Base, engine
+            # Auto-create tables if running on fresh database (e.g. Neon PostgreSQL)
+            Base.metadata.create_all(bind=engine)
             init_defaults(db)
-        except Exception as ex:  # tables missing => migrations not run
-            log.error("Startup defaults failed (did you run `alembic upgrade head`?): %s", ex)
+        except Exception as ex:
+            log.error("Startup database initialization failed: %s", ex)
     yield
 
 
 app = FastAPI(title="Restaurant Operations Manager", version="1.0.0", lifespan=lifespan)
 s = get_settings()
-app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in s.cors_origins.split(",") if o.strip()],
-                   allow_methods=["*"], allow_headers=["*"])
+origins = [o.strip() for o in s.cors_origins.split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=origins if origins else ["*"],
+                   allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -66,14 +70,18 @@ async def security_headers(request: Request, call_next):
 API = "/api/v1"
 for r in (auth, udhari, money, stock, reporting):
     app.include_router(r.router, prefix=API)
+    app.include_router(r.router, prefix="/v1")
 
 
 @app.get(f"{API}/health")
+@app.get("/v1/health")
+@app.get("/api/health")
+@app.get("/health")
 def health():
     from sqlalchemy import text
     with SessionLocal() as db:
         db.execute(text("select 1"))
-    return {"status": "ok"}
+    return {"status": "ok", "db": "connected"}
 
 
 @app.exception_handler(RequestValidationError)
