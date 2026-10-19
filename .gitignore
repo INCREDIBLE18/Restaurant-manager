@@ -41,5 +41,10 @@ Thumbs.db
 .vscode/
 .neon
 
+# Scripts with embedded secrets (run locally only)
+scripts/sync_env.ps1
+scripts/sync_vercel_env.py
+
+
 .vercel
 .env*.local

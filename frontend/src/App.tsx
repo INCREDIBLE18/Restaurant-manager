@@ -307,6 +307,9 @@ export default function App() {
         </div>
       </nav>
 
+      {/* Mobile sidebar overlay — close when tapped */}
+      {open && <div className="sidebar-overlay visible" onClick={() => setOpen(false)} />}
+
       {/* Main Container */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {/* Modern POS HUD Header */}

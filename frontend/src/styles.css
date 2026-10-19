@@ -1046,11 +1046,49 @@ tr.voided td { text-decoration: line-through; color: var(--muted); opacity: 0.65
     display: none;
   }
   .main {
-    padding: 14px 14px 75px;
+    padding: 14px 12px 80px;
   }
   .kv { grid-template-columns: 1fr; }
   .stat-value { font-size: 1.35rem; }
   .pos-hud-shortcuts { display: none; }
+
+  /* Mobile table improvements */
+  .table-wrap { border-radius: 8px; }
+  th, td { padding: 8px 10px; font-size: 0.82rem; }
+  th { font-size: 0.72rem; }
+
+  /* Mobile form layout */
+  .form-grid { grid-template-columns: 1fr; }
+  .row.between { flex-direction: column; align-items: flex-start; gap: 8px; }
+  h1 { font-size: 1.3rem; }
+
+  /* Item row on mobile */
+  .item-row { flex-direction: column; }
+  .item-row .field { width: 100% !important; }
+  .item-row input[style] { width: 100% !important; }
+
+  /* Tender buttons — scrollable on mobile */
+  .tender-presets { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .tender-btn { flex-shrink: 0; }
+
+  /* Tabs scrollable */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .tab { flex-shrink: 0; }
+
+  /* Buttons on mobile */
+  .btn { min-height: 44px; font-size: 0.9rem; }
+
+  /* Grid on mobile */
+  .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+}
+
+@media (max-width: 480px) {
+  .main { padding: 10px 10px 80px; }
+  .grid { grid-template-columns: 1fr; }
+  .card { padding: 14px 12px; border-radius: 10px; }
+  .modal { padding: 16px; }
+  .login { margin: 6vh 0 20px; padding: 24px 18px; }
+  .row.between > div { flex-wrap: wrap; gap: 6px; }
 }
 
 @media print {
@@ -1060,3 +1098,102 @@ tr.voided td { text-decoration: line-through; color: var(--muted); opacity: 0.65
   .card, .table-wrap { border: none; box-shadow: none; background: transparent; }
   .table-wrap { overflow: visible; }
 }
+
+/* OCR Bill Scanner Card */
+.ocr-card {
+  border: 1.5px dashed var(--brand);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.04), rgba(99, 102, 241, 0.04));
+  margin-bottom: 12px;
+}
+
+.ocr-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.ocr-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--brand);
+}
+
+.ocr-body {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ocr-upload-zone {
+  flex: 1;
+  min-width: 200px;
+  border: 1.5px dashed var(--line-light);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: block;
+  background: var(--input-bg);
+}
+
+.ocr-upload-zone:hover {
+  border-color: var(--brand);
+  background: rgba(249, 115, 22, 0.05);
+}
+
+.ocr-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.ocr-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.ocr-scan-btn {
+  background: linear-gradient(135deg, var(--accent), #4338ca);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--accent-glow);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ocr-scan-btn:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+/* Mobile OCR adjustments */
+@media (max-width: 600px) {
+  .ocr-body { flex-direction: column; }
+  .ocr-upload-zone { min-width: unset; width: 100%; }
+  .ocr-scan-btn { width: 100%; justify-content: center; min-height: 48px; font-size: 1rem; }
+}
+
+/* Sidebar overlay on mobile */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 45;
+  backdrop-filter: blur(2px);
+}
+@media (max-width: 900px) {
+  .sidebar.open ~ .sidebar-overlay,
+  .sidebar-overlay.visible {
+    display: block;
+  }
+}
+

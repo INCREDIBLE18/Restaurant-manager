@@ -260,3 +260,90 @@ def audit_log(limit: int = 200, entity_type: str = "", _: User = Depends(admin_u
     return [{"id": a.id, "ts": a.ts.isoformat(), "user": a.username, "action": a.action, "entity_type": a.entity_type,
              "entity_id": a.entity_id, "before": a.before, "after": a.after, "reason": a.reason}
             for a in q.limit(min(limit, 1000))]
+
+
+# ---- Bill OCR
+@router.post("/ocr/bill")
+async def ocr_bill(file: UploadFile = File(...), _: User = Depends(current_user)):
+    """Use Gemini Vision to extract structured bill data from a photo.
+    Returns: bill_no, date, total, items list, notes."""
+    import base64
+    import json as _json
+
+    cfg = get_settings()
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        err(422, "Only image files are supported for OCR (PNG/JPG/JPEG/WEBP)")
+
+    data = await file.read()
+    if len(data) > cfg.max_upload_mb * 1024 * 1024:
+        err(413, f"File larger than {cfg.max_upload_mb} MB")
+    if not data:
+        err(422, "Empty file")
+
+    # Try Gemini Vision
+    if not cfg.gemini_api_key:
+        err(503, "OCR feature requires GEMINI_API_KEY to be configured on the server")
+
+    b64 = base64.b64encode(data).decode()
+    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "webp": "image/webp", "gif": "image/gif"}.get(ext.lstrip("."), "image/jpeg")
+
+    prompt = """You are a receipt/bill parser for a restaurant POS system.
+Analyze this restaurant bill image and extract the following information in JSON format.
+Be precise - only include data that is clearly visible.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "bill_no": "string or null",
+  "date": "YYYY-MM-DD or null",
+  "total": "numeric string or null",
+  "items": [
+    {"name": "item name", "qty": 1, "rate": 0.0, "amount": 0.0}
+  ],
+  "notes": "any extra info like table number, restaurant name, etc or empty string"
+}
+
+Rules:
+- bill_no: the bill/invoice number shown on the receipt
+- date: convert any date format to YYYY-MM-DD (e.g. 12/10/26 → 2026-10-12)
+- total: the final grand total amount (numeric only, no currency symbol)
+- items: each line item with name, quantity, rate per unit, and total amount
+- If any field is not clearly visible, use null for that field
+- For items, if qty or rate is unclear but amount is there, set qty=1 and rate=amount"""
+
+    try:
+        import urllib.request
+        payload = _json.dumps({
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inline_data": {"mime_type": mime, "data": b64}}
+                ]
+            }],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}
+        }).encode()
+
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{cfg.gemini_model}:generateContent?key={cfg.gemini_api_key}",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = _json.loads(resp.read())
+
+        text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+        # Strip markdown code blocks if present
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        text = text.strip()
+        parsed = _json.loads(text)
+        return {"ok": True, "data": parsed}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex), "data": {
+            "bill_no": None, "date": None, "total": None, "items": [], "notes": ""
+        }}
+

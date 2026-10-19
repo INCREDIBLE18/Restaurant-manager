@@ -48,6 +48,9 @@ export function AddBill() {
   const [file, setFile] = useState<File | null>(null)
   const [lines, setLines] = useState<{ item_name: string; quantity: string; unit_price: string }[]>([])
   const { error, busy, submit } = useSubmit()
+  const [ocrBusy, setOcrBusy] = useState(false)
+  const [ocrMsg, setOcrMsg] = useState('')
+  const [ocrFile, setOcrFile] = useState<File | null>(null)
   const linesTotal = lines.reduce((t, l) => t + num(l.quantity) * num(l.unit_price), 0)
   const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }))
   const outstanding = Math.max(0, num(f.total) - num(f.paid_now))
@@ -75,6 +78,42 @@ export function AddBill() {
     }
   }
 
+  const handleOcrScan = async () => {
+    if (!ocrFile) return
+    setOcrBusy(true)
+    setOcrMsg('📸 Scanning bill with AI...')
+    try {
+      const fd = new FormData()
+      fd.append('file', ocrFile)
+      const res = await api('/ocr/bill', { form: fd })
+      if (!res.ok) {
+        setOcrMsg(`⚠️ OCR failed: ${res.error || 'Unknown error'}. Please fill manually.`)
+        return
+      }
+      const d = res.data
+      let filled = []
+      if (d.bill_no) { set('bill_no', d.bill_no); filled.push('bill no') }
+      if (d.date) { set('business_date', d.date); filled.push('date') }
+      if (d.total) { set('total', String(d.total)); filled.push('total') }
+      if (d.notes) { set('notes', d.notes); filled.push('notes') }
+      if (d.items && d.items.length > 0) {
+        setLines(d.items.map((it: any) => ({
+          item_name: it.name || '',
+          quantity: String(it.qty || 1),
+          unit_price: String(it.rate || it.amount || 0)
+        })))
+        filled.push(`${d.items.length} item lines`)
+      }
+      setOcrMsg(filled.length > 0 ? `✅ Auto-filled: ${filled.join(', ')}. Please review and correct if needed.` : '⚠️ Could not extract data — bill may be unclear. Fill manually.')
+      // Also set as attachment
+      setFile(ocrFile)
+    } catch (ex: any) {
+      setOcrMsg(`❌ ${ex.message || 'OCR failed'}`)
+    } finally {
+      setOcrBusy(false)
+    }
+  }
+
   return (
     <>
       <div className="row between">
@@ -86,6 +125,51 @@ export function AddBill() {
           <kbd className="kbd-sm">F10</kbd>
         </div>
       </div>
+
+      {/* OCR Bill Scanner */}
+      <div className="card ocr-card">
+        <div className="ocr-header">
+          <span className="ocr-title">📸 Scan Paper Bill (Auto-fill)</span>
+          <span className="muted" style={{ fontSize: '0.8rem' }}>Upload a photo of the bill — AI will extract all details</span>
+        </div>
+        <div className="ocr-body">
+          <label className="ocr-upload-zone">
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp"
+              style={{ display: 'none' }}
+              onChange={e => { setOcrFile(e.target.files?.[0] || null); setOcrMsg('') }}
+            />
+            {ocrFile ? (
+              <div className="ocr-selected">
+                <span>📄</span>
+                <span>{ocrFile.name}</span>
+                <span className="muted" style={{ fontSize: '0.76rem' }}>({(ocrFile.size / 1024).toFixed(0)} KB)</span>
+              </div>
+            ) : (
+              <div className="ocr-placeholder">
+                <span style={{ fontSize: '2rem' }}>📷</span>
+                <span>Tap to take photo or choose file</span>
+                <span className="muted" style={{ fontSize: '0.75rem' }}>JPG, PNG, WEBP — max 15 MB</span>
+              </div>
+            )}
+          </label>
+          <button
+            type="button"
+            className="btn ocr-scan-btn"
+            disabled={!ocrFile || ocrBusy}
+            onClick={handleOcrScan}
+          >
+            {ocrBusy ? '⏳ Scanning…' : '🔍 Scan & Auto-fill'}
+          </button>
+        </div>
+        {ocrMsg && (
+          <div className={`alert ${ocrMsg.startsWith('✅') ? 'ok' : ocrMsg.startsWith('⚠️') ? 'warn' : 'info'}`} style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>
+            {ocrMsg}
+          </div>
+        )}
+      </div>
+
       <div className="card" onKeyDown={handleCardKeyDown}><ErrorBox msg={error} />
         {error.includes('already exists') && <label className="check"><input type="checkbox" checked={f.allow_duplicate} onChange={e => set('allow_duplicate', e.target.checked)} />Allow this duplicate bill number, then press Save again</label>}
         <CustomerPicker value={cust} onChange={setCust} />
@@ -120,10 +204,14 @@ export function AddBill() {
         {f.in_pos_report && num(f.paid_now) > 0 && <Notice msg="Because this bill is in the POS report, the amount received now is assumed to be inside the POS tender totals and is not added to the cashbook a second time." />}
         <div className="form-grid">
           <Field label="Notes"><input value={f.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. Table 4, parcel, special discount" /></Field>
-          <Field label="Photo / PDF of paper bill (optional)"><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={e => setFile(e.target.files?.[0] || null)} /></Field>
+          <Field label="Photo / PDF of paper bill (optional)">
+            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={e => setFile(e.target.files?.[0] || null)} />
+            {file && !ocrFile && <small style={{ color: 'var(--muted)' }}>Selected: {file.name}</small>}
+            {ocrFile && <small style={{ color: 'var(--good)' }}>✓ Using scanned image as attachment</small>}
+          </Field>
         </div>
         <h3>Item lines (optional)</h3>
-        {lines.map((l, i) => <div className="row" key={i}>
+        {lines.map((l, i) => <div className="row item-row" key={i}>
           <Field label="Item"><input value={l.item_name} onChange={e => setLines(ls => ls.map((x, k) => k === i ? { ...x, item_name: e.target.value } : x))} placeholder="Dish / beverage name" /></Field>
           <Field label="Qty"><input style={{ width: 80 }} value={l.quantity} onChange={e => setLines(ls => ls.map((x, k) => k === i ? { ...x, quantity: e.target.value } : x))} /></Field>
           <Field label="Price"><input style={{ width: 100 }} value={l.unit_price} onChange={e => setLines(ls => ls.map((x, k) => k === i ? { ...x, unit_price: e.target.value } : x))} /></Field>
@@ -139,6 +227,7 @@ export function AddBill() {
     </>
   )
 }
+
 
 export function CustomerDetail({ user }: { user: User }) {
   const { id } = useParams()
