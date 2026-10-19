@@ -39,14 +39,14 @@ def init_defaults(db):
 
 @asynccontextmanager
 async def lifespan(_app):
-    with SessionLocal() as db:
-        try:
-            from .db import Base, unpooled_engine
-            # Auto-create tables if running on fresh database (e.g. Neon PostgreSQL) using direct connection
-            Base.metadata.create_all(bind=unpooled_engine)
+    try:
+        from .db import Base, unpooled_engine
+        # Auto-create tables if running on fresh database (e.g. Neon PostgreSQL) using direct connection
+        Base.metadata.create_all(bind=unpooled_engine)
+        with SessionLocal() as db:
             init_defaults(db)
-        except Exception as ex:
-            log.error("Startup database initialization failed: %s", ex)
+    except Exception as ex:
+        log.error("Startup database initialization failed: %s", ex)
     yield
 
 
