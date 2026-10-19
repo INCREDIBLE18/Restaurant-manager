@@ -1,0 +1,30 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: restaurant-operations-manager:latest
+    container_name: restaurant-manager-app
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - SECRET_KEY=${SECRET_KEY:-default-insecure-key-change-in-production-env}
+      - GEMINI_ENABLED=${GEMINI_ENABLED:-false}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Optional PostgreSQL service for multi-terminal or high-concurrency setups
+  # db:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: restaurant
+  #     POSTGRES_PASSWORD: change-me
+  #     POSTGRES_DB: restaurant
+  #   ports: ["5432:5432"]
+  #   volumes: ["pgdata:/var/lib/postgresql/data"]
+  #   restart: unless-stopped
+
+# volumes:
+#   pgdata:
