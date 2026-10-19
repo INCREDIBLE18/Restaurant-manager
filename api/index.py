@@ -43,6 +43,15 @@ class EntryApp:
             else:
                 raise RuntimeError(import_err)
 
+        if scope.get("type") == "http":
+            hdrs = dict(scope.get("headers", []))
+            # If rewritten to /api, resolve the actual requested client URI
+            matched = hdrs.get(b"x-matched-path", b"").decode()
+            if not matched or not matched.startswith("/api/"):
+                matched = hdrs.get(b"x-forwarded-uri", b"").decode()
+            if matched and matched.startswith("/api/"):
+                scope["path"] = matched
+
         try:
             await fastapi_app(scope, receive, send)
         except Exception:

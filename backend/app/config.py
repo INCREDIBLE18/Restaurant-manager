@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +24,27 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_enabled: bool = False
     gemini_model: str = "gemini-2.5-flash"
+
+    @field_validator("gemini_enabled", mode="before")
+    @classmethod
+    def clean_bool(cls, v):
+        if isinstance(v, str):
+            return v.strip().lower() in ("true", "1", "yes", "t", "on")
+        return bool(v)
+
+    @field_validator("database_url", "database_url_unpooled", "secret_key", "cors_origins", "neon_auth_base_url", "neon_auth_jwks_url", "gemini_api_key", mode="before")
+    @classmethod
+    def clean_strings(cls, v):
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator("token_ttl_hours", "max_upload_mb", mode="before")
+    @classmethod
+    def clean_ints(cls, v):
+        if isinstance(v, str):
+            return int(v.strip())
+        return v
 
     @property
     def attachments_dir(self) -> Path:
