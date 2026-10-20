@@ -76,7 +76,20 @@ def customers(q: str = "", filter: str = "", db: Session = Depends(get_db), _: U
     if q:
         like = f"%{q.strip()}%"
         qs = qs.filter(or_(Customer.name.ilike(like), Customer.phone.ilike(like)))
-    out = [cust_out(db, c) for c in qs.order_by(Customer.name)]
+    all_custs = qs.order_by(Customer.name).all()
+    cust_ids = [c.id for c in all_custs]
+    balances = ledger.batch_customer_balances(db, cust_ids)
+
+    out = []
+    for c in all_custs:
+        d = {"id": c.id, "name": c.name, "phone": c.phone, "address": c.address, "notes": c.notes, "active": c.active,
+             "created_at": c.created_at.isoformat()}
+        d.update(balances.get(c.id, {
+            "outstanding": ZERO_D, "advance": ZERO_D, "net": ZERO_D,
+            "oldest_open_bill_date": None, "last_collection": None, "open_bills": 0
+        }))
+        out.append(d)
+
     od = int(get_setting(db, "overdue_days") or 30)
     if filter == "owing":
         out = [c for c in out if c["outstanding"] > 0]

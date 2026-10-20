@@ -2,6 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .core import METHODS, assert_day_open, audit, err, get_setting, money, today_ist
@@ -61,6 +62,16 @@ def account_balance(db: Session, acc: Account) -> Decimal:
     return acc.opening_balance + sum((m.amount for m in q), ZERO)
 
 
+def batch_account_balances(db: Session, accounts: list[Account]) -> dict[int, Decimal]:
+    if not accounts:
+        return {}
+    acc_ids = [a.id for a in accounts]
+    sums = dict(db.query(CashMovement.account_id, func.coalesce(func.sum(CashMovement.amount), 0))
+                .filter(CashMovement.account_id.in_(acc_ids))
+                .group_by(CashMovement.account_id).all())
+    return {a.id: a.opening_balance + Decimal(str(sums.get(a.id, 0))) for a in accounts}
+
+
 # ---------------------------------------------------------------- receivables
 def active_alloc_total(bill: SaleBill) -> Decimal:
     return sum((a.amount for a in alloc_rows(bill) if a.active and a.receipt.status == "posted"), ZERO)
@@ -108,16 +119,136 @@ def receipt_unallocated(db: Session, r: Receipt) -> Decimal:
     return r.amount - used
 
 
+def batch_customer_balances(db: Session, customer_ids: list[int] | None = None) -> dict[int, dict]:
+    result = {}
+    if customer_ids is not None:
+        for cid in customer_ids:
+            result[cid] = {
+                "outstanding": ZERO,
+                "advance": ZERO,
+                "net": ZERO,
+                "oldest_open_bill_date": None,
+                "last_collection": None,
+                "open_bills": 0,
+            }
+        if not customer_ids:
+            return result
+
+    # 1. Fetch posted bills
+    bq = db.query(SaleBill).filter(SaleBill.status == "posted")
+    if customer_ids is not None:
+        bq = bq.filter(SaleBill.customer_id.in_(customer_ids))
+    bills = bq.order_by(SaleBill.business_date, SaleBill.id).all()
+    bill_ids = [b.id for b in bills]
+
+    # 2. Batch fetch paid allocations for these bills (receipt must be posted)
+    paid_map = {}
+    if bill_ids:
+        alloc_rows = (
+            db.query(ReceiptAllocation.bill_id, func.coalesce(func.sum(ReceiptAllocation.amount), 0))
+            .join(Receipt, ReceiptAllocation.receipt_id == Receipt.id)
+            .filter(
+                ReceiptAllocation.bill_id.in_(bill_ids),
+                ReceiptAllocation.active.is_(True),
+                Receipt.status == "posted",
+            )
+            .group_by(ReceiptAllocation.bill_id)
+            .all()
+        )
+        paid_map = {b_id: Decimal(str(amt)) for b_id, amt in alloc_rows}
+
+    # 3. Batch fetch adjustments for these bills
+    adj_map = {}
+    if bill_ids:
+        adj_rows = (
+            db.query(BillAdjustment.bill_id, func.coalesce(func.sum(BillAdjustment.amount), 0))
+            .filter(
+                BillAdjustment.bill_id.in_(bill_ids),
+                BillAdjustment.active.is_(True),
+            )
+            .group_by(BillAdjustment.bill_id)
+            .all()
+        )
+        adj_map = {b_id: Decimal(str(amt)) for b_id, amt in adj_rows}
+
+    for b in bills:
+        cid = b.customer_id
+        if cid not in result:
+            result[cid] = {
+                "outstanding": ZERO,
+                "advance": ZERO,
+                "net": ZERO,
+                "oldest_open_bill_date": None,
+                "last_collection": None,
+                "open_bills": 0,
+            }
+        paid = paid_map.get(b.id, ZERO)
+        adj = adj_map.get(b.id, ZERO)
+        outstanding = max(ZERO, b.total - paid - adj)
+        if outstanding > 0:
+            result[cid]["outstanding"] += outstanding
+            result[cid]["open_bills"] += 1
+            b_date_str = b.business_date.isoformat()
+            if result[cid]["oldest_open_bill_date"] is None or b_date_str < result[cid]["oldest_open_bill_date"]:
+                result[cid]["oldest_open_bill_date"] = b_date_str
+
+    # 4. Fetch receipts
+    rq = db.query(Receipt).filter(Receipt.status == "posted")
+    if customer_ids is not None:
+        rq = rq.filter(Receipt.customer_id.in_(customer_ids))
+    receipts = rq.all()
+    receipt_ids = [r.id for r in receipts]
+
+    # 5. Batch fetch allocations used per receipt
+    used_map = {}
+    if receipt_ids:
+        rc_alloc_rows = (
+            db.query(ReceiptAllocation.receipt_id, func.coalesce(func.sum(ReceiptAllocation.amount), 0))
+            .filter(
+                ReceiptAllocation.receipt_id.in_(receipt_ids),
+                ReceiptAllocation.active.is_(True),
+            )
+            .group_by(ReceiptAllocation.receipt_id)
+            .all()
+        )
+        used_map = {r_id: Decimal(str(amt)) for r_id, amt in rc_alloc_rows}
+
+    for r in receipts:
+        cid = r.customer_id
+        if cid not in result:
+            result[cid] = {
+                "outstanding": ZERO,
+                "advance": ZERO,
+                "net": ZERO,
+                "oldest_open_bill_date": None,
+                "last_collection": None,
+                "open_bills": 0,
+            }
+        used = used_map.get(r.id, ZERO)
+        unalloc = max(ZERO, r.amount - used)
+        result[cid]["advance"] += unalloc
+
+        if r.kind == "collection":
+            r_date_str = r.receipt_date.isoformat()
+            if result[cid]["last_collection"] is None or r_date_str > result[cid]["last_collection"]:
+                result[cid]["last_collection"] = r_date_str
+
+    for cid, data in result.items():
+        data["net"] = data["outstanding"] - data["advance"]
+
+    return result
+
+
 def customer_balance(db: Session, customer_id: int) -> dict:
-    bills = customer_bills(db, customer_id)
-    due = sum((b["outstanding"] for b in bills), ZERO)
-    receipts = db.query(Receipt).filter(Receipt.customer_id == customer_id, Receipt.status == "posted").all()
-    advance = sum((receipt_unallocated(db, r) for r in receipts), ZERO)
-    oldest = min((b["business_date"] for b in bills if b["outstanding"] > 0), default=None)
-    last_rc = max((r.receipt_date for r in receipts if r.kind == "collection"), default=None)
-    return {"outstanding": due, "advance": advance, "net": due - advance,
-            "oldest_open_bill_date": oldest, "last_collection": last_rc.isoformat() if last_rc else None,
-            "open_bills": sum(1 for b in bills if b["outstanding"] > 0)}
+    res = batch_customer_balances(db, [customer_id])
+    return res.get(customer_id, {
+        "outstanding": ZERO,
+        "advance": ZERO,
+        "net": ZERO,
+        "oldest_open_bill_date": None,
+        "last_collection": None,
+        "open_bills": 0,
+    })
 
 
 def next_number(db: Session, prefix_key: str, model, col, default_prefix: str) -> str:

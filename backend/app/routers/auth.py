@@ -14,7 +14,7 @@ from ..core import (
     verify_password,
 )
 from ..db import get_db
-from ..ledger import account_balance
+from ..ledger import account_balance, batch_account_balances
 from ..models import Account, AppSetting, AuditLog, User, utcnow
 
 router = APIRouter()
@@ -185,9 +185,11 @@ def put_settings(body: dict, admin: User = Depends(admin_user), db: Session = De
 # ---- accounts
 @router.get("/accounts")
 def accounts(_: User = Depends(current_user), db: Session = Depends(get_db)):
+    accs = db.query(Account).order_by(Account.id).all()
+    bals = batch_account_balances(db, accs)
     return [{"id": a.id, "name": a.name, "type": a.type, "is_physical_cash": a.is_physical_cash, "active": a.active,
-             "opening_balance": a.opening_balance, "balance": account_balance(db, a)}
-            for a in db.query(Account).order_by(Account.id)]
+             "opening_balance": a.opening_balance, "balance": bals.get(a.id, a.opening_balance)}
+            for a in accs]
 
 
 @router.post("/accounts")

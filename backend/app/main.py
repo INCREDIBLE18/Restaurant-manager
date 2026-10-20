@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from decimal import Decimal
 
@@ -39,14 +40,17 @@ def init_defaults(db):
 
 @asynccontextmanager
 async def lifespan(_app):
-    try:
-        from .db import Base, unpooled_engine
-        # Auto-create tables if running on fresh database (e.g. Neon PostgreSQL) using direct connection
-        Base.metadata.create_all(bind=unpooled_engine)
-        with SessionLocal() as db:
-            init_defaults(db)
-    except Exception as ex:
-        log.error("Startup database initialization failed: %s", ex)
+    # Tables are pre-initialized in cloud PostgreSQL (Neon). Skip redundant schema
+    # introspection on Vercel serverless to save 1.5-2.5s on every cold start.
+    if not os.environ.get("VERCEL"):
+        try:
+            from .db import Base, unpooled_engine
+            # Auto-create tables if running on fresh database (e.g. local SQLite) using direct connection
+            Base.metadata.create_all(bind=unpooled_engine)
+            with SessionLocal() as db:
+                init_defaults(db)
+        except Exception as ex:
+            log.error("Startup database initialization failed: %s", ex)
     yield
 
 
