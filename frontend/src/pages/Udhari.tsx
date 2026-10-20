@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, downloadCsv, fmt, fmtDate, num, openAttachment, todayIso } from '../api'
 import { AccountSelect, Customer, CustomerPicker, MethodSelect, useAccounts } from '../shared'
@@ -39,6 +39,182 @@ export function Customers() {
   )
 }
 
+function CameraScannerModal({
+  onCapture,
+  onClose
+}: {
+  onCapture: (file: File) => void
+  onClose: () => void
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [torch, setTorch] = useState(false)
+  const [hasTorch, setHasTorch] = useState(false)
+  const nativeFallbackInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    let active = true
+    async function initCamera() {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
+      setCameraError(null)
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Live camera is not supported in this browser.')
+        }
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 }
+          },
+          audio: false
+        })
+        if (!active) {
+          s.getTracks().forEach(t => t.stop())
+          return
+        }
+        streamRef.current = s
+        if (videoRef.current) {
+          videoRef.current.srcObject = s
+          videoRef.current.play().catch(() => {})
+        }
+        const track = s.getVideoTracks()[0]
+        const cap: any = track.getCapabilities?.() || {}
+        setHasTorch(!!cap.torch)
+      } catch (err: any) {
+        if (!active) return
+        setCameraError(err.message || 'Camera permission denied or camera not available.')
+      }
+    }
+    initCamera()
+    return () => {
+      active = false
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
+    }
+  }, [facingMode])
+
+  const takePhoto = () => {
+    if (!videoRef.current) return
+    const v = videoRef.current
+    const w = v.videoWidth || 1280
+    const h = v.videoHeight || 720
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(v, 0, 0, w, h)
+    canvas.toBlob(blob => {
+      if (blob) {
+        const file = new File([blob], `bill_${Date.now()}.jpg`, { type: 'image/jpeg' })
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop())
+        }
+        onCapture(file)
+      }
+    }, 'image/jpeg', 0.95)
+  }
+
+  const toggleTorch = async () => {
+    if (!streamRef.current) return
+    const track = streamRef.current.getVideoTracks()[0]
+    const next = !torch
+    try {
+      await (track as any).applyConstraints({ advanced: [{ torch: next }] })
+      setTorch(next)
+    } catch {}
+  }
+
+  const flipCamera = () => {
+    setFacingMode(m => (m === 'environment' ? 'user' : 'environment'))
+  }
+
+  return (
+    <div className="camera-overlay" onClick={onClose}>
+      <div className="camera-modal" onClick={e => e.stopPropagation()}>
+        <div className="camera-topbar">
+          <span className="camera-title-badge">📷 Align Paper Bill & Tap Snap</span>
+          <div className="camera-actions">
+            {hasTorch && (
+              <button type="button" className="btn btn-sm camera-tool-btn" onClick={toggleTorch} title="Toggle Torch">
+                {torch ? '🔦 ON' : '💡 Flash'}
+              </button>
+            )}
+            <button type="button" className="btn btn-sm camera-tool-btn" onClick={flipCamera} title="Flip Camera">
+              🔄 Flip
+            </button>
+            <button type="button" className="btn btn-sm ghost" onClick={onClose} style={{ color: '#fff' }}>
+              ✕ Close
+            </button>
+          </div>
+        </div>
+
+        {cameraError ? (
+          <div className="camera-fallback-card">
+            <div style={{ fontSize: '3rem', marginBottom: 8 }}>📷</div>
+            <h3 style={{ margin: '0 0 6px', color: '#fff' }}>Camera Access Required</h3>
+            <p className="muted" style={{ margin: '0 0 16px', fontSize: '0.9rem', maxWidth: 300, textAlign: 'center' }}>
+              {cameraError}
+            </p>
+            <button
+              type="button"
+              className="btn ocr-camera-cta-btn"
+              onClick={() => nativeFallbackInputRef.current?.click()}
+              style={{ minHeight: 48, padding: '0 24px', fontSize: '1rem', justifyContent: 'center' }}
+            >
+              <span className="ocr-cta-icon">📷</span>
+              <span className="ocr-cta-title">Open Phone Camera Directly</span>
+            </button>
+            <input
+              ref={nativeFallbackInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const fl = e.target.files?.[0]
+                if (fl) onCapture(fl)
+              }}
+            />
+          </div>
+        ) : (
+          <div className="camera-viewport">
+            <video ref={videoRef} autoPlay playsInline muted className="camera-video-elem" />
+            <div className="camera-reticle">
+              <div className="reticle-corner top-left" />
+              <div className="reticle-corner top-right" />
+              <div className="reticle-corner bottom-left" />
+              <div className="reticle-corner bottom-right" />
+              <div className="reticle-scan-line" />
+              <div className="reticle-text">Position paper bill inside frame</div>
+            </div>
+          </div>
+        )}
+
+        <div className="camera-bottom-bar">
+          <button
+            type="button"
+            className="camera-snap-btn"
+            disabled={!!cameraError}
+            onClick={takePhoto}
+            title="Snap Receipt Photo"
+          >
+            <div className="camera-snap-circle" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AddBill() {
   const nav = useNavigate()
   const accounts = useAccounts()
@@ -51,6 +227,11 @@ export function AddBill() {
   const [ocrBusy, setOcrBusy] = useState(false)
   const [ocrMsg, setOcrMsg] = useState('')
   const [ocrFile, setOcrFile] = useState<File | null>(null)
+  const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null)
+  const [showCameraModal, setShowCameraModal] = useState(false)
+  const nativeCameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+
   const linesTotal = lines.reduce((t, l) => t + num(l.quantity) * num(l.unit_price), 0)
   const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }))
   const outstanding = Math.max(0, num(f.total) - num(f.paid_now))
@@ -78,13 +259,28 @@ export function AddBill() {
     }
   }
 
-  const handleOcrScan = async () => {
-    if (!ocrFile) return
+  const onImageCaptured = (capturedFile: File, autoScan = true) => {
+    if (ocrPreviewUrl) {
+      try { URL.revokeObjectURL(ocrPreviewUrl) } catch {}
+    }
+    setOcrFile(capturedFile)
+    setFile(capturedFile)
+    const url = URL.createObjectURL(capturedFile)
+    setOcrPreviewUrl(url)
+    setOcrMsg('')
+    if (autoScan) {
+      handleOcrScan(capturedFile)
+    }
+  }
+
+  const handleOcrScan = async (overrideFile?: File) => {
+    const target = overrideFile || ocrFile
+    if (!target) return
     setOcrBusy(true)
     setOcrMsg('📸 Scanning bill with AI...')
     try {
       const fd = new FormData()
-      fd.append('file', ocrFile)
+      fd.append('file', target)
       const res = await api('/ocr/bill', { form: fd })
       if (!res.ok) {
         setOcrMsg(`⚠️ OCR failed: ${res.error || 'Unknown error'}. Please fill manually.`)
@@ -104,9 +300,8 @@ export function AddBill() {
         })))
         filled.push(`${d.items.length} item lines`)
       }
-      setOcrMsg(filled.length > 0 ? `✅ Auto-filled: ${filled.join(', ')}. Please review and correct if needed.` : '⚠️ Could not extract data — bill may be unclear. Fill manually.')
-      // Also set as attachment
-      setFile(ocrFile)
+      setOcrMsg(filled.length > 0 ? `✅ Auto-filled: ${filled.join(', ')}. Review and save.` : '⚠️ Could not extract data — bill may be unclear. Fill manually.')
+      setFile(target)
     } catch (ex: any) {
       setOcrMsg(`❌ ${ex.message || 'OCR failed'}`)
     } finally {
@@ -116,6 +311,40 @@ export function AddBill() {
 
   return (
     <>
+      {/* Hidden native camera input: capture="environment" opens device camera directly on mobile */}
+      <input
+        ref={nativeCameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const fl = e.target.files?.[0]
+          if (fl) onImageCaptured(fl, true)
+        }}
+      />
+      {/* Hidden gallery fallback input */}
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*,.pdf"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const fl = e.target.files?.[0]
+          if (fl) onImageCaptured(fl, true)
+        }}
+      />
+
+      {showCameraModal && (
+        <CameraScannerModal
+          onCapture={fl => {
+            setShowCameraModal(false)
+            onImageCaptured(fl, true)
+          }}
+          onClose={() => setShowCameraModal(false)}
+        />
+      )}
+
       <div className="row between">
         <h1>Add udhari (credit) bill</h1>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -126,45 +355,113 @@ export function AddBill() {
         </div>
       </div>
 
-      {/* OCR Bill Scanner */}
+      {/* Camera-First OCR Bill Scanner */}
       <div className="card ocr-card">
         <div className="ocr-header">
-          <span className="ocr-title">📸 Scan Paper Bill (Auto-fill)</span>
-          <span className="muted" style={{ fontSize: '0.8rem' }}>Upload a photo of the bill — AI will extract all details</span>
+          <div>
+            <span className="ocr-title">📷 Scan Paper Bill (Camera-First OCR)</span>
+            <div className="muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>
+              Point camera at receipt — AI automatically extracts bill number, date, total, and item lines
+            </div>
+          </div>
+          {ocrPreviewUrl && (
+            <button
+              type="button"
+              className="btn btn-sm secondary"
+              onClick={() => {
+                if (ocrPreviewUrl) try { URL.revokeObjectURL(ocrPreviewUrl) } catch {}
+                setOcrFile(null)
+                setOcrPreviewUrl(null)
+                setOcrMsg('')
+              }}
+            >
+              ✕ Clear Photo
+            </button>
+          )}
         </div>
-        <div className="ocr-body">
-          <label className="ocr-upload-zone">
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,.webp"
-              style={{ display: 'none' }}
-              onChange={e => { setOcrFile(e.target.files?.[0] || null); setOcrMsg('') }}
-            />
-            {ocrFile ? (
-              <div className="ocr-selected">
-                <span>📄</span>
-                <span>{ocrFile.name}</span>
-                <span className="muted" style={{ fontSize: '0.76rem' }}>({(ocrFile.size / 1024).toFixed(0)} KB)</span>
+
+        {ocrPreviewUrl ? (
+          <div className="ocr-preview-row">
+            <img src={ocrPreviewUrl} alt="Bill preview" className="ocr-preview-thumb" />
+            <div className="ocr-preview-details">
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--ink)' }}>
+                {ocrFile?.name}
               </div>
-            ) : (
-              <div className="ocr-placeholder">
-                <span style={{ fontSize: '2rem' }}>📷</span>
-                <span>Tap to take photo or choose file</span>
-                <span className="muted" style={{ fontSize: '0.75rem' }}>JPG, PNG, WEBP — max 15 MB</span>
+              <div className="muted" style={{ fontSize: '0.78rem', margin: '2px 0 8px' }}>
+                {((ocrFile?.size || 0) / 1024).toFixed(0)} KB • Photo attached to bill
               </div>
-            )}
-          </label>
-          <button
-            type="button"
-            className="btn ocr-scan-btn"
-            disabled={!ocrFile || ocrBusy}
-            onClick={handleOcrScan}
-          >
-            {ocrBusy ? '⏳ Scanning…' : '🔍 Scan & Auto-fill'}
-          </button>
-        </div>
+              <div className="ocr-preview-actions">
+                <button
+                  type="button"
+                  className="btn ocr-scan-btn"
+                  disabled={ocrBusy}
+                  onClick={() => handleOcrScan()}
+                >
+                  {ocrBusy ? '⏳ Scanning with AI…' : '🔍 Re-scan Bill'}
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  disabled={ocrBusy}
+                  onClick={() => nativeCameraInputRef.current?.click()}
+                >
+                  📷 Retake Photo
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  disabled={ocrBusy}
+                  onClick={() => setShowCameraModal(true)}
+                >
+                  🎥 Live Viewfinder
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="ocr-camera-panel">
+            <div className="ocr-action-grid">
+              {/* Primary: Direct Phone Camera */}
+              <button
+                type="button"
+                className="btn ocr-camera-cta-btn ocr-primary-cta"
+                onClick={() => nativeCameraInputRef.current?.click()}
+              >
+                <span className="ocr-cta-icon">📸</span>
+                <div className="ocr-cta-text">
+                  <span className="ocr-cta-title">Open Camera App</span>
+                  <span className="ocr-cta-sub">Opens your phone camera directly to snap bill</span>
+                </div>
+              </button>
+
+              {/* Secondary: Live In-App Viewfinder */}
+              <button
+                type="button"
+                className="btn secondary ocr-camera-cta-btn"
+                onClick={() => setShowCameraModal(true)}
+              >
+                <span className="ocr-cta-icon">🎥</span>
+                <div className="ocr-cta-text">
+                  <span className="ocr-cta-title">Live Scanner Viewfinder</span>
+                  <span className="ocr-cta-sub">In-browser camera with receipt guide frame</span>
+                </div>
+              </button>
+            </div>
+
+            <div className="ocr-gallery-fallback">
+              <button
+                type="button"
+                className="btn ghost ocr-gallery-btn"
+                onClick={() => galleryInputRef.current?.click()}
+              >
+                📁 or choose existing photo / PDF from gallery
+              </button>
+            </div>
+          </div>
+        )}
+
         {ocrMsg && (
-          <div className={`alert ${ocrMsg.startsWith('✅') ? 'ok' : ocrMsg.startsWith('⚠️') ? 'warn' : 'info'}`} style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>
+          <div className={`alert ${ocrMsg.startsWith('✅') ? 'ok' : ocrMsg.startsWith('⚠️') ? 'warn' : 'info'}`} style={{ margin: '10px 0 0', fontSize: '0.85rem' }}>
             {ocrMsg}
           </div>
         )}
