@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api, getToken, setToken } from './api'
 import { ErrorBox, Field, useSubmit } from './ui'
 import Dashboard from './pages/Dashboard'
@@ -11,11 +11,11 @@ import Inventory from './pages/Inventory'
 import Cash from './pages/Cash'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
-import { PosHeader } from './PosHeader'
-import { PosHud } from './PosHud'
 import { CommandPalette } from './CommandPalette'
 import { ShortcutsModal } from './ShortcutsModal'
 import { getStoredTheme, isTypingActive, setStoredTheme } from './keyboard'
+import { Icon } from './icons'
+import { Toaster } from './toast'
 
 export type User = { id: number; username: string; full_name: string; role: 'admin' | 'staff' }
 
@@ -40,288 +40,208 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '85vh', padding: 16 }}>
-      <form className="card login" onSubmit={go}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg, var(--brand), #ea580c)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, boxShadow: '0 4px 16px var(--brand-glow)' }}>
-            🍽️
-          </div>
-        </div>
-        <h1 style={{ fontSize: '1.45rem', textAlign: 'center', margin: '0 0 4px' }}>Restaurant Operations</h1>
-        <p className="muted" style={{ textAlign: 'center', fontSize: '0.86rem', margin: '0 0 20px' }}>
-          POS Ledger & Operations Terminal
-        </p>
-        {needsSetup && <p className="alert info">First run: create the owner (admin) account. Password must be at least 8 characters.</p>}
+    <div className="auth-screen">
+      <div className="auth-side">
+        <div className="auth-brand"><span className="brand-mark"><Icon name="receipt" size={22} /></span> Restaurant Ops</div>
+        <h2>Udhari, cash and expenses — reconciled every day.</h2>
+        <ul>
+          <li><Icon name="check" size={16} /> Bill-wise credit ledger with part payments</li>
+          <li><Icon name="check" size={16} /> Daily cash closing with variance tracking</li>
+          <li><Icon name="check" size={16} /> Expenses, owner funding and supplier dues</li>
+          <li><Icon name="check" size={16} /> Reviewed imports of your POS PDF reports</li>
+        </ul>
+      </div>
+      <form className="auth-card" onSubmit={go}>
+        <h1>{needsSetup ? 'Set up your workspace' : 'Sign in'}</h1>
+        <p className="muted">{needsSetup ? 'Create the owner (admin) account. You can add staff later.' : 'Welcome back. Enter your credentials to continue.'}</p>
         <ErrorBox msg={error} />
-        <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: 14 }}>
+        <div className="form-stack">
           {needsSetup && (
             <Field label="Your name">
               <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="e.g. Ramesh Sharma" />
             </Field>
           )}
           <Field label="Username">
-            <input value={username} onChange={e => setUsername(e.target.value)} autoFocus autoComplete="username" placeholder="cashier / admin" />
+            <input value={username} onChange={e => setUsername(e.target.value)} autoFocus autoComplete="username" />
           </Field>
-          <Field label="Password">
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" placeholder="••••••••" />
+          <Field label="Password" hint={needsSetup ? 'At least 8 characters' : undefined}>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={needsSetup ? 'new-password' : 'current-password'} />
           </Field>
         </div>
-        <p style={{ marginTop: 20 }}>
-          <button className="btn" style={{ width: '100%' }} disabled={busy || needsSetup === null}>
-            {needsSetup ? 'Create Owner Account' : 'Sign In to Terminal'}
-          </button>
-        </p>
-        <div style={{ textAlign: 'center', marginTop: 14 }}>
-          <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-            Press <kbd className="kbd-sm">↵</kbd> to sign in · <kbd className="kbd-sm">Tab</kbd> to next field
-          </span>
-        </div>
+        <button className="btn block" disabled={busy || needsSetup === null || !username || !password}>
+          {busy ? 'Please wait…' : needsSetup ? 'Create owner account' : 'Sign in'}
+        </button>
       </form>
     </div>
   )
 }
 
-const NAV: [string, string, string, string][] = [
-  ['/', 'Dashboard', '📊', 'Alt+1'],
-  ['/udhari', 'Udhari / Customers', '👥', 'Alt+2'],
-  ['/receive', 'Receive Payment', '💵', 'F4'],
-  ['/expenses', 'Expenses & Payables', '🧾', 'F9'],
-  ['/purchases', 'Purchases', '🛒', 'Alt+7'],
-  ['/inventory', 'Inventory & Imports', '📦', 'Alt+8'],
-  ['/cash', 'Daily Closing / Cash', '🔒', 'F8'],
-  ['/reports', 'Reports & P&L', '📈', 'Alt+9'],
+type NavItem = { to: string; label: string; icon: string; hint: string; admin?: boolean }
+const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
+  { title: 'Overview', items: [{ to: '/', label: 'Dashboard', icon: 'dashboard', hint: 'Alt+1' }] },
+  { title: 'Daily operations', items: [
+    { to: '/udhari', label: 'Customers & Udhari', icon: 'users', hint: 'Alt+2' },
+    { to: '/receive', label: 'Receive payment', icon: 'wallet', hint: 'F4' },
+    { to: '/cash', label: 'Cash closing', icon: 'lock', hint: 'F8' },
+  ] },
+  { title: 'Money out', items: [
+    { to: '/expenses', label: 'Expenses & payables', icon: 'receipt', hint: 'F9' },
+    { to: '/purchases', label: 'Purchases', icon: 'cart', hint: 'Alt+7' },
+  ] },
+  { title: 'Stock & insights', items: [
+    { to: '/inventory', label: 'Inventory & imports', icon: 'box', hint: 'Alt+8' },
+    { to: '/reports', label: 'Reports', icon: 'chart', hint: 'Alt+9' },
+  ] },
+  { title: 'Admin', items: [{ to: '/settings', label: 'Settings', icon: 'settings', hint: 'Alt+0', admin: true }] },
 ]
+
+const TITLES: [RegExp, string][] = [
+  [/^\/$/, 'Dashboard'], [/^\/udhari\/new-bill/, 'New udhari bill'], [/^\/udhari\/\d+/, 'Customer ledger'], [/^\/udhari/, 'Customers & Udhari'],
+  [/^\/receive/, 'Receive payment'], [/^\/cash/, 'Cash closing'], [/^\/expenses/, 'Expenses & payables'], [/^\/purchases/, 'Purchases'],
+  [/^\/inventory/, 'Inventory & imports'], [/^\/reports/, 'Reports'], [/^\/settings/, 'Settings'],
+]
+
+function UserMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+  const initials = (user.full_name || user.username).split(/\s+/).map(s => s[0]).join('').slice(0, 2).toUpperCase()
+  return (
+    <div className="user-menu" ref={ref}>
+      <button className="avatar-btn" onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label="Account menu">
+        <span className="avatar">{initials}</span>
+      </button>
+      {open && (
+        <div className="menu" role="menu">
+          <div className="menu-head"><b>{user.full_name || user.username}</b><span className="muted">@{user.username} · {user.role}</span></div>
+          <button role="menuitem" className="menu-item danger" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function App() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [user, setUser] = useState<User | null>(null)
   const [ready, setReady] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('rom-nav-collapsed') === '1' } catch { return false } })
   const [shopName, setShopName] = useState('')
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [db, setDb] = useState<'ok' | 'down' | ''>('')
+  const [theme, setTheme] = useState<'dark' | 'light'>(getStoredTheme())
   const [cmdOpen, setCmdOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
-  // Initialize theme
-  useEffect(() => {
-    const t = getStoredTheme()
-    setTheme(t)
-    setStoredTheme(t)
-  }, [])
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    setStoredTheme(next)
-  }
+  useEffect(() => { setStoredTheme(theme) }, [theme])
+  const toggleTheme = useCallback(() => setTheme(t => (t === 'dark' ? 'light' : 'dark')), [])
+  const toggleCollapsed = () => setCollapsed(c => { try { localStorage.setItem('rom-nav-collapsed', c ? '0' : '1') } catch { /* ignore */ } return !c })
 
   useEffect(() => {
     const out = () => setUser(null)
     window.addEventListener('rom-logout', out)
-    if (getToken()) {
-      api('/auth/me').then(setUser).catch(() => setToken(null)).finally(() => setReady(true))
-    } else {
-      setReady(true)
-    }
+    if (getToken()) api('/auth/me').then(setUser).catch(() => setToken(null)).finally(() => setReady(true))
+    else setReady(true)
     return () => window.removeEventListener('rom-logout', out)
   }, [])
 
   useEffect(() => {
-    if (user) {
-      api('/settings').then(s => setShopName(s.restaurant_name)).catch(() => {})
-    }
+    if (!user) return
+    api('/settings').then(s => setShopName(s.restaurant_name)).catch(() => {})
+    const ping = () => api('/health').then(() => setDb('ok')).catch(() => setDb('down'))
+    ping()
+    const t = setInterval(ping, 60000)
+    return () => clearInterval(t)
   }, [user])
 
-  // Global Keyboard Shortcuts
+  useEffect(() => { setMobileOpen(false) }, [location.pathname])
+
   useEffect(() => {
+    const go = (e: KeyboardEvent, path: string) => { e.preventDefault(); navigate(path) }
     const onKeyDown = (e: KeyboardEvent) => {
-      // Escape closes modals/palettes
-      if (e.key === 'Escape') {
-        if (cmdOpen) {
-          e.preventDefault()
-          setCmdOpen(false)
-          return
-        }
-        if (shortcutsOpen) {
-          e.preventDefault()
-          setShortcutsOpen(false)
-          return
-        }
-      }
-
-      // F1 or ? for Help / Shortcuts
-      if (e.key === 'F1' || (e.key === '?' && !isTypingActive())) {
-        e.preventDefault()
-        setShortcutsOpen(true)
-        return
-      }
-
-      // Ctrl+K or F2 for Command Palette
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setCmdOpen(prev => !prev)
-        return
-      }
-      if (e.key === 'F2') {
-        e.preventDefault()
-        setCmdOpen(prev => !prev)
-        return
-      }
-
-      // Alt+T for Theme toggle
-      if (e.altKey && e.key.toLowerCase() === 't') {
-        e.preventDefault()
-        toggleTheme()
-        return
-      }
-
-      // POS Hotkeys
-      if (e.key === 'F3') {
-        e.preventDefault()
-        navigate('/udhari/new-bill')
-        return
-      }
-      if (e.key === 'F4') {
-        e.preventDefault()
-        navigate('/receive')
-        return
-      }
-      if (e.key === 'F8') {
-        e.preventDefault()
-        navigate('/cash')
-        return
-      }
-      if (e.key === 'F9') {
-        e.preventDefault()
-        navigate('/expenses')
-        return
-      }
-
-      // Alt + number page jumps
+      if (e.key === 'F1' || (e.key === '?' && !isTypingActive())) { e.preventDefault(); setShortcutsOpen(true); return }
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || e.key === 'F2') { e.preventDefault(); setCmdOpen(p => !p); return }
+      if (e.key === '/' && !isTypingActive()) { e.preventDefault(); setCmdOpen(true); return }
+      if (e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); toggleTheme(); return }
+      if (e.key === 'F3') return go(e, '/udhari/new-bill')
+      if (e.key === 'F4') return go(e, '/receive')
+      if (e.key === 'F8') return go(e, '/cash')
+      if (e.key === 'F9') return go(e, '/expenses')
       if (e.altKey && !e.ctrlKey && !e.shiftKey) {
-        if (e.key === '1') { e.preventDefault(); navigate('/') }
-        else if (e.key === '2') { e.preventDefault(); navigate('/udhari') }
-        else if (e.key === '3') { e.preventDefault(); navigate('/udhari/new-bill') }
-        else if (e.key === '4') { e.preventDefault(); navigate('/receive') }
-        else if (e.key === '5') { e.preventDefault(); navigate('/cash') }
-        else if (e.key === '6') { e.preventDefault(); navigate('/expenses') }
-        else if (e.key === '7') { e.preventDefault(); navigate('/purchases') }
-        else if (e.key === '8') { e.preventDefault(); navigate('/inventory') }
-        else if (e.key === '9') { e.preventDefault(); navigate('/reports') }
-        else if (e.key === '0') { e.preventDefault(); navigate('/settings') }
+        const map: Record<string, string> = { '1': '/', '2': '/udhari', '3': '/udhari/new-bill', '4': '/receive', '5': '/cash', '6': '/expenses', '7': '/purchases', '8': '/inventory', '9': '/reports', '0': '/settings' }
+        if (map[e.key]) return go(e, map[e.key])
       }
-
-      // Universal Form Save: Ctrl+Enter or F10
       if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F10') {
-        const active = document.activeElement as HTMLElement | null
-        const form = active?.closest('form')
-        if (form) {
-          e.preventDefault()
-          const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null
-          if (submitBtn) {
-            submitBtn.click()
-            return
-          }
-        }
-        // If not in a form or form has no type=submit, click primary save button
-        const saveBtn = document.querySelector('.card .btn:not(.secondary):not(.ghost):not(.danger)') as HTMLButtonElement | null
-        if (saveBtn && !saveBtn.disabled) {
-          e.preventDefault()
-          saveBtn.click()
-        }
+        const form = (document.activeElement as HTMLElement | null)?.closest('form')
+        const btn = (form?.querySelector('button[type="submit"]') || document.querySelector('[data-primary-action]')) as HTMLButtonElement | null
+        if (btn && !btn.disabled) { e.preventDefault(); btn.click() }
       }
     }
-
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [cmdOpen, shortcutsOpen, navigate, theme])
+  }, [navigate, toggleTheme])
 
-  if (!ready) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', gap: 12, color: 'var(--muted)' }}>
-        <div className="status-pill-dot" />
-        <span>Initializing POS Terminal…</span>
-      </div>
-    )
-  }
+  if (!ready) return <div className="boot"><div className="spinner" /> Loading…</div>
+  if (!user) return <><Login onLogin={setUser} /><Toaster /></>
 
-  if (!user) return <Login onLogin={setUser} />
-
-  const logout = () => {
-    setToken(null)
-    setUser(null)
-  }
+  const logout = () => { setToken(null); setUser(null) }
   const admin = user.role === 'admin'
+  const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] || ''
 
   return (
-    <div className="layout">
-      {/* Mobile Topbar */}
-      <div className="topbar">
-        <button className="btn small secondary" onClick={() => setOpen(!open)} aria-label="Menu">☰ Menu</button>
-        <b>{shopName || 'Restaurant POS'}</b>
-        <button className="btn small ghost" onClick={toggleTheme} aria-label="Toggle Theme">{theme === 'dark' ? '☀️' : '🌙'}</button>
-      </div>
-
-      {/* POS Desktop Sidebar */}
-      <nav className={`sidebar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>
-        <div className="brand">
-          <div className="brand-title">
-            <div className="brand-icon">🍽️</div>
-            <span>{shopName || 'Restaurant POS'}</span>
-          </div>
-          <small>Operations & Cash Ledger</small>
+    <div className={`app-shell ${collapsed ? 'nav-collapsed' : ''}`}>
+      <aside className={`side ${mobileOpen ? 'open' : ''}`} aria-label="Main navigation">
+        <div className="side-brand">
+          <span className="brand-mark"><Icon name="receipt" size={18} /></span>
+          <div className="side-brand-text"><b title={shopName}>{shopName || 'Restaurant'}</b><small>Operations ledger</small></div>
         </div>
-
-        <div className="sidebar-nav-list">
-          {NAV.map(([to, label, icon, shortcut]) => (
-            <NavLink key={to} to={to} end={to === '/'}>
-              <div className="nav-label-wrap">
-                <span className="nav-icon">{icon}</span>
-                <span>{label}</span>
+        <nav className="side-nav">
+          {NAV_GROUPS.map(g => {
+            const items = g.items.filter(i => !i.admin || admin)
+            if (!items.length) return null
+            return (
+              <div className="side-group" key={g.title}>
+                <div className="side-group-title">{g.title}</div>
+                {items.map(i => (
+                  <NavLink key={i.to} to={i.to} end={i.to === '/'} className="side-link" title={`${i.label} (${i.hint})`}>
+                    <Icon name={i.icon} size={18} />
+                    <span className="side-label">{i.label}</span>
+                  </NavLink>
+                ))}
               </div>
-              <kbd className="kbd-sm">{shortcut}</kbd>
-            </NavLink>
-          ))}
-          {admin && (
-            <NavLink to="/settings">
-              <div className="nav-label-wrap">
-                <span className="nav-icon">⚙️</span>
-                <span>Settings & Admin</span>
-              </div>
-              <kbd className="kbd-sm">Alt+0</kbd>
-            </NavLink>
-          )}
-        </div>
+            )
+          })}
+        </nav>
+        <button className="side-collapse" onClick={toggleCollapsed} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={16} /><span className="side-label">Collapse</span>
+        </button>
+      </aside>
+      {mobileOpen && <div className="scrim" onClick={() => setMobileOpen(false)} />}
 
-        <div className="user">
-          <div className="user-info">
-            <span className="user-name">{user.full_name || user.username}</span>
-            <span className="user-role">{user.role}</span>
+      <div className="shell-main">
+        <header className="topbar-x">
+          <button className="icon-btn mobile-only" onClick={() => setMobileOpen(true)} aria-label="Open menu"><Icon name="menu" /></button>
+          <div className="topbar-title">{title}</div>
+          <button className="search-trigger" onClick={() => setCmdOpen(true)} aria-label="Search">
+            <Icon name="search" size={16} /><span>Search customers, bills, receipts…</span><kbd className="kbd-sm">Ctrl K</kbd>
+          </button>
+          <div className="topbar-actions">
+            <button className="btn small" onClick={() => navigate('/udhari/new-bill')} title="New udhari bill (F3)"><Icon name="plus" size={16} /><span className="hide-sm">New bill</span></button>
+            <button className="btn small secondary hide-xs" onClick={() => navigate('/receive')} title="Receive payment (F4)"><Icon name="wallet" size={16} /><span className="hide-sm">Receive</span></button>
+            {db && <span className={`db-dot ${db}`} title={db === 'ok' ? 'Server and database reachable' : 'Cannot reach the server — changes will not save'} />}
+            <button className="icon-btn" onClick={() => setShortcutsOpen(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (F1)"><Icon name="keyboard" /></button>
+            <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme" title="Toggle theme (Alt+T)"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
+            <UserMenu user={user} onLogout={logout} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <span style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>Register Active</span>
-            <a href="#" style={{ color: 'var(--bad)', fontSize: '0.78rem', fontWeight: 600 }} onClick={e => { e.preventDefault(); logout() }}>
-              Sign out
-            </a>
-          </div>
-        </div>
-      </nav>
+        </header>
+        {db === 'down' && <div className="offline-bar"><Icon name="alert" size={16} /> Cannot reach the server. Check your connection — nothing you save now will be stored.</div>}
 
-      {/* Mobile sidebar overlay — close when tapped */}
-      {open && <div className="sidebar-overlay visible" onClick={() => setOpen(false)} />}
-
-      {/* Main Container */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {/* Modern POS HUD Header */}
-        <PosHeader
-          shopName={shopName}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          onOpenCommandPalette={() => setCmdOpen(true)}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-        />
-
-        <main className="main">
+        <main className="main page-in" key={location.pathname}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/udhari" element={<Customers />} />
@@ -337,25 +257,11 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
-
-        {/* Bottom Hotkey HUD / Ticker */}
-        <PosHud
-          onOpenCommandPalette={() => setCmdOpen(true)}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-          onToggleTheme={toggleTheme}
-        />
       </div>
 
-      {/* Global Command Palette */}
-      <CommandPalette
-        isOpen={cmdOpen}
-        onClose={() => setCmdOpen(false)}
-        onToggleTheme={toggleTheme}
-        onOpenHelp={() => setShortcutsOpen(true)}
-      />
-
-      {/* Global Keyboard Shortcuts Modal */}
+      <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} onToggleTheme={toggleTheme} onOpenHelp={() => setShortcutsOpen(true)} isAdmin={admin} />
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+      <Toaster />
     </div>
   )
 }

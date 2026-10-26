@@ -20,13 +20,14 @@ export function isTypingActive(): boolean {
 
 /** Theme storage helper */
 export function getStoredTheme(): 'dark' | 'light' {
-  const t = localStorage.getItem('rom-theme')
+  let t: string | null = null
+  try { t = localStorage.getItem('rom-theme') } catch { /* storage blocked */ }
   if (t === 'light' || t === 'dark') return t
-  return 'dark'
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 export function setStoredTheme(theme: 'dark' | 'light') {
-  localStorage.setItem('rom-theme', theme)
+  try { localStorage.setItem('rom-theme', theme) } catch { /* storage blocked */ }
   document.documentElement.setAttribute('data-theme', theme)
 }
 

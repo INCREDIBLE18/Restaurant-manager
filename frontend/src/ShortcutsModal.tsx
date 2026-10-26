@@ -8,6 +8,7 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
         { keys: ['F1', 'or', '?'], desc: 'Open this Keyboard Shortcuts cheat-sheet' },
         { keys: ['Ctrl', 'K'], desc: 'Open Command Palette & Omni-Search' },
         { keys: ['F2'], desc: 'Alternative quick search shortcut' },
+        { keys: ['/'], desc: 'Search from anywhere (when not typing)' },
         { keys: ['F3'], desc: 'Jump to + Add Udhari (Credit) Bill' },
         { keys: ['F4'], desc: 'Jump to Receive Payment / Settle Bill' },
         { keys: ['F8'], desc: 'Jump to Daily Closing & Cash Drawer' },

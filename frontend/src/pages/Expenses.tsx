@@ -25,7 +25,7 @@ function PaymentForm({ expense, onDone, accounts }: { expense: any; onDone: () =
       {p.funded_by === 'owner' && <>
         <Notice msg="Recorded once as an expense. The restaurant's cash/bank is NOT reduced; an amount owed to the owner is created." />
         <label className="check"><input type="checkbox" checked={p.reimbursable} onChange={e => setP({ ...p, reimbursable: e.target.checked })} />Reimbursable (uncheck if it is a non-reimbursable owner contribution)</label></>}
-      <button className="btn" disabled={busy} onClick={() => submit(async () => { await api(`/expenses/${expense.id}/payments`, { body: { ...p, account_id: p.funded_by === 'account' ? acct : null } }); onDone() })}>Save payment</button>
+      <button className="btn" disabled={busy} onClick={() => submit('Payment recorded', async () => { await api(`/expenses/${expense.id}/payments`, { body: { ...p, account_id: p.funded_by === 'account' ? acct : null } }); onDone() })}>Save payment</button>
     </div>
   )
 }
@@ -49,9 +49,9 @@ function ExpenseModal({ id, user, onClose, onChange }: { id: number; user: User;
           <td>{user.role === 'admin' && p.status === 'posted' && <button className="btn small ghost" onClick={() => setVoiding(p.id)}>Void</button>}</td></tr>)}
           {!e.payments.length && <tr><td colSpan={7} className="muted">No payments — nothing has left any account.</td></tr>}</tbody></table></div>
       {voiding && <div className="card"><Field label="Reason for voiding this payment"><input value={reason} onChange={e => setReason(e.target.value)} /></Field>
-        <button className="btn danger" onClick={() => submit(async () => { await api(`/expense-payments/${voiding}/void`, { body: { reason } }); setVoiding(null); setReason(''); reload(); onChange() })}>Confirm void</button></div>}
+        <button className="btn danger" onClick={() => submit('Payment voided', async () => { await api(`/expense-payments/${voiding}/void`, { body: { reason } }); setVoiding(null); setReason(''); reload(); onChange() })}>Confirm void</button></div>}
       {user.role === 'admin' && e.status !== 'voided' && !e.payments.some((p: any) => p.status === 'posted') && <div className="card"><Field label="Void this expense (entered by mistake) — reason"><input value={reason} onChange={ev => setReason(ev.target.value)} /></Field>
-        <button className="btn danger" disabled={!reason.trim()} onClick={() => submit(async () => { await api(`/expenses/${id}/void`, { body: { reason } }); onChange(); onClose() })}>Void expense</button></div>}
+        <button className="btn danger" disabled={!reason.trim()} onClick={() => submit('Expense voided', async () => { await api(`/expenses/${id}/void`, { body: { reason } }); onChange(); onClose() })}>Void expense</button></div>}
       {e.status !== 'paid' && e.status !== 'voided' && <PaymentForm expense={e} accounts={accounts} onDone={() => { reload(); onChange() }} />}
     </Modal>
   )
@@ -67,7 +67,7 @@ function AddExpense({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   const [newVendor, setNewVendor] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const { error, busy, submit } = useSubmit()
-  const save = () => submit(async () => {
+  const save = () => submit('Expense saved', async () => {
     let attachment = ''
     if (file) { const fd = new FormData(); fd.append('file', file); attachment = (await api('/attachments', { form: fd })).attachment }
     let vendor_id: number | null = f.vendor_id ? Number(f.vendor_id) : null
@@ -116,19 +116,20 @@ function ReimburseOwner({ onDone }: { onDone: () => void }) {
       <ErrorBox msg={error} />
       <div className="form-grid"><Field label="Amount (₹)"><input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} /></Field>
         <MethodSelect value={method} onChange={setMethod} /><AccountSelect accounts={accounts} method={method} value={acct} onChange={setAcct} label="Paid from account" /></div>
-      <button className="btn secondary" disabled={busy || !(num(amount) > 0)} onClick={() => submit(async () => { await api('/owner/reimburse', { body: { amount, method, account_id: acct } }); setAmount(''); reload(); onDone() })}>Reimburse owner</button>
+      <button className="btn secondary" disabled={busy || !(num(amount) > 0)} onClick={() => submit('Owner reimbursed', async () => { await api('/owner/reimburse', { body: { amount, method, account_id: acct } }); setAmount(''); reload(); onDone() })}>Reimburse owner</button>
       <p className="muted">This reduces the account and the owed balance. It does not create a new expense.</p>
     </div>
   )
 }
 
 export default function Expenses({ user }: { user: User }) {
-  const [filters, setFilters] = useState({ status: '', category: '', q: '', date_from: '', date_to: '', source: '', paid_by: '' })
+  const sp = new URLSearchParams(window.location.search)
+  const [filters, setFilters] = useState({ status: '', category: '', q: sp.get('q') || '', date_from: '', date_to: '', source: '', paid_by: '' })
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
   const { data, error, reload } = useAsync(() => api('/expenses?' + qs), [qs])
   const accounts = useAccounts()
   const [adding, setAdding] = useState(false)
-  const [openId, setOpenId] = useState<number | null>(null)
+  const [openId, setOpenId] = useState<number | null>(sp.get('open') ? Number(sp.get('open')) : null)
   const [owner, setOwner] = useState(false)
   const total = (data || []).reduce((s: number, e: any) => s + num(e.due), 0)
   return (

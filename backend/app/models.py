@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text,
+    Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, LargeBinary, String, Text,
     UniqueConstraint, JSON,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -413,3 +413,16 @@ class DayClose(Base):
     reopen_reason: Mapped[str] = mapped_column(Text, default="")
     reopened_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reopened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class StoredFile(Base):
+    """Uploaded bills/photos/report files kept in the database so they survive serverless redeploys
+    and are included in every database backup."""
+    __tablename__ = "stored_files"
+    name: Mapped[str] = mapped_column(String(80), primary_key=True)  # <uuid-or-hash>.<ext>
+    original_name: Mapped[str] = mapped_column(String(200), default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

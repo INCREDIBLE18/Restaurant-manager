@@ -73,7 +73,7 @@ def create_backup(database_url: str | None = None, attachments_dir: Path | None 
         if bad or db_member not in z.namelist():
             target.unlink(missing_ok=True)
             raise HTTPException(500, "Backup verification failed; file discarded")
-    return {"name": name, "size": target.stat().st_size, "attachments": len(files), "db_kind": kind, "verified": True,
+    return {"name": name, "size": target.stat().st_size, "attachments": len(files) + _db_file_count(url), "db_kind": kind, "verified": True,
             "path": str(target)}
 
 
@@ -113,3 +113,14 @@ def restore_backup(zip_path: Path, target_db: Path, target_attachments: Path):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(z.read(n))
     return man
+
+
+def _db_file_count(url: str) -> int:
+    """Files stored inside the database travel with the database snapshot itself."""
+    try:
+        from sqlalchemy import create_engine, text
+        eng = create_engine(url)
+        with eng.connect() as c:
+            return int(c.execute(text("SELECT COUNT(*) FROM stored_files")).scalar() or 0)
+    except Exception:
+        return 0

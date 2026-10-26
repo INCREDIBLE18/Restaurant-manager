@@ -264,6 +264,62 @@ def import_history(db, p):
     return _tbl("Import History", ["batch", "type", "report_date", "uploaded", "file", "method", "rows", "warnings", "status"], rows)
 
 
+def customer_aging(db, p):
+    """Open udhari split by bill age, per customer."""
+    from .routers.insights import BUCKETS
+    today = today_ist()
+    rows = {}
+    for b in db.query(SaleBill).filter(SaleBill.status == "posted").order_by(SaleBill.business_date):
+        out = ledger.bill_summary(db, b)["outstanding"]
+        if out <= 0:
+            continue
+        r = rows.setdefault(b.customer_id, {"customer": b.customer.name, "phone": b.customer.phone,
+                                            **{k: ZERO for k, _, _ in BUCKETS}, "total": ZERO})
+        age = (today - b.business_date).days
+        for k, lo, hi in BUCKETS:
+            if lo <= age <= hi:
+                r[k] += out
+                break
+        r["total"] += out
+    out_rows = sorted(rows.values(), key=lambda r: r["total"], reverse=True)
+    cols = ["customer", "phone"] + [k for k, _, _ in BUCKETS] + ["total"]
+    return _tbl("Customer Aging (by bill age, days)", cols, out_rows,
+                {k: sum((r[k] for r in out_rows), ZERO) for k in [k for k, _, _ in BUCKETS] + ["total"]})
+
+
+def pnl_summary(db, p):
+    """Operational profit estimate: POS sales (typed at day close, else Item Sales report) minus expenses incurred.
+    Not a statutory/GST P&L: no inventory valuation or depreciation."""
+    a, b = _rng(p.get("date_from"), p.get("date_to"))
+    sales, sources = ZERO, {"day_close_pos_total": 0, "item_sales_report": 0}
+    closes = {d.business_date: d for d in db.query(DayClose).all() if _in(d.business_date, a, b) and d.pos_total_sales is not None}
+    report_days = defaultdict(lambda: ZERO)
+    for l in db.query(ItemSaleLine).filter(ItemSaleLine.active.is_(True)):
+        if _in(l.business_date, a, b):
+            report_days[l.business_date] += l.amount
+    for d in set(closes) | set(report_days):
+        if d in closes:
+            sales += closes[d].pos_total_sales
+            sources["day_close_pos_total"] += 1
+        else:
+            sales += report_days[d]
+            sources["item_sales_report"] += 1
+    rows = [{"section": "Income", "line": "Sales (POS)", "amount": sales,
+             "basis": f"{sources['day_close_pos_total']} day(s) from POS totals at day close, {sources['item_sales_report']} from Item Sales reports"}]
+    by_cat = defaultdict(lambda: ZERO)
+    for e in _expenses(db, p):
+        by_cat[e.category] += e.total
+    exp_total = ZERO
+    for cat, amt in sorted(by_cat.items(), key=lambda kv: kv[1], reverse=True):
+        rows.append({"section": "Expenses", "line": cat, "amount": amt, "basis": "expenses incurred (paid or not)"})
+        exp_total += amt
+    net = sales - exp_total
+    rows.append({"section": "Result", "line": "Operating profit (estimate)", "amount": net,
+                 "basis": "sales − expenses; excludes stock valuation, depreciation, taxes"})
+    return _tbl("Profit & Loss (operational estimate)", ["section", "line", "amount", "basis"], rows,
+                {"sales": sales, "expenses": exp_total, "operating_profit": net})
+
+
 REPORTS = {
     "customer-outstanding": customer_outstanding, "customer-statement": customer_statement,
     "udhari-collections": udhari_collections, "bill-outstanding": bill_outstanding,
@@ -271,6 +327,7 @@ REPORTS = {
     "owner-ledger": owner_ledger_report, "cashbook": cashbook, "daily-closing": daily_closing,
     "item-sales-summary": item_sales_summary, "purchase-summary": purchase_summary,
     "stock-movements": stock_movements, "import-history": import_history,
+    "customer-aging": customer_aging, "pnl-summary": pnl_summary,
 }
 
 

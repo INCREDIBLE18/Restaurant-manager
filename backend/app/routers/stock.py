@@ -12,6 +12,7 @@ from .. import ledger, parsing
 from ..config import get_settings
 from ..core import admin_user, audit, current_user, err, money, norm_name, parse_date, qty, today_ist
 from ..db import get_db
+from ..files import file_response, save_file
 from ..models import (
     Expense, ImportBatch, ImportRow, InventoryMovement, Item, ItemAlias, ItemSaleLine, PurchaseBill, PurchaseLine, User, Vendor, utcnow,
 )
@@ -343,7 +344,7 @@ def preview(report_type: str = Form(...), report_date: str = Form(""), use_ai: b
     except ValueError as ex:
         err(422, f"Could not read the file: {ex}")
     stored = f"import_{h[:24]}{ext}"
-    (get_settings().attachments_dir / stored).write_bytes(data)
+    save_file(db, stored, data, fn, user.id)
     b = ImportBatch(report_type=report_type, filename=fn, file_hash=h, stored_file=stored, report_date=res.report_date,
                     print_info=res.print_info, outlet_name=res.outlet, extraction_method=res.method, status="draft",
                     printed_grand_total=res.printed_total, printed_grand_qty=res.printed_qty,
@@ -583,7 +584,6 @@ def reverse(bid: int, body: dict, db: Session = Depends(get_db), admin: User = D
 def import_file(bid: int, db: Session = Depends(get_db), _: User = Depends(current_user)):
     from fastapi.responses import FileResponse
     b = _batch(db, bid)
-    p = get_settings().attachments_dir / b.stored_file
-    if not b.stored_file or not p.is_file():
+    if not b.stored_file:
         err(404, "Original file missing")
-    return FileResponse(p, filename=b.filename)
+    return file_response(db, b.stored_file, b.filename)

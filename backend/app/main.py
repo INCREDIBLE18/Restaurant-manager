@@ -15,7 +15,7 @@ from .config import ROOT, get_settings
 from .core import DEFAULT_SETTINGS
 from .db import SessionLocal
 from .models import Account, AppSetting
-from .routers import auth, money, reporting, stock, udhari
+from .routers import auth, insights, money, reporting, stock, udhari
 
 log = logging.getLogger("restaurant")
 
@@ -57,8 +57,13 @@ async def lifespan(_app):
 app = FastAPI(title="Restaurant Operations Manager", version="1.0.0", lifespan=lifespan)
 s = get_settings()
 origins = [o.strip() for o in s.cors_origins.split(",") if o.strip()]
+# Auth uses bearer tokens (no cookies), so credentials are never needed cross-origin.
 app.add_middleware(CORSMiddleware, allow_origins=origins if origins else ["*"],
-                   allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
+                   allow_methods=["*"], allow_headers=["*"], allow_credentials=False)
+
+if s.secret_key in ("", "change-me-in-env") and not s.database_url.startswith("sqlite"):
+    # A guessable signing key would let anyone forge login tokens on a shared database.
+    raise RuntimeError("SECRET_KEY is not set. Put a long random SECRET_KEY in the environment before starting.")
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -72,7 +77,7 @@ async def security_headers(request: Request, call_next):
 
 
 API = "/api/v1"
-for r in (auth, udhari, money, stock, reporting):
+for r in (auth, udhari, money, stock, reporting, insights):
     app.include_router(r.router, prefix=API)
     app.include_router(r.router, prefix="/v1")
 
@@ -82,22 +87,12 @@ for r in (auth, udhari, money, stock, reporting):
 @app.get("/api/health")
 @app.get("/health")
 def health():
+    """Public liveness check: reports only that the API and database respond (no deployment details)."""
     from sqlalchemy import text
     with SessionLocal() as db:
-        if db.bind.dialect.name == "postgresql":
-            res = db.execute(text("SELECT current_database(), current_user, version()")).fetchone()
-            dbname = res[0] if res else "connected"
-        else:
-            db.execute(text("SELECT 1"))
-            dbname = "connected"
-    cfg = get_settings()
-    return {
-        "status": "ok",
-        "database": dbname,
-        "neon_branch": cfg.neon_branch or "production",
-        "neon_auth": bool(cfg.neon_auth_base_url),
-        "auth_base_url": cfg.neon_auth_base_url or None,
-    }
+        db.execute(text("SELECT 1"))
+        dialect = db.bind.dialect.name
+    return {"status": "ok", "database": "postgresql" if dialect == "postgresql" else "sqlite"}
 
 
 

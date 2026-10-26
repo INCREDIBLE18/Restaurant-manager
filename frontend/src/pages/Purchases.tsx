@@ -22,7 +22,7 @@ export default function Purchases() {
   const setLine = (i: number, patch: Partial<Line>) => setLines(ls => ls.map((l, k) => k === i ? { ...l, ...patch } : l))
   const subtotal = lines.reduce((s, l) => s + num(l.quantity) * num(l.unit_price), 0)
   const total = subtotal - num(f.discount) + num(f.tax)
-  const save = () => submit(async () => {
+  const save = () => submit('Purchase saved', async () => {
     let vendor_id = f.vendor_id ? Number(f.vendor_id) : null
     if (newVendor.trim()) vendor_id = (await api('/vendors', { body: { name: newVendor } })).id
     const payments = num(pay.amount) > 0 ? [{ amount: pay.amount, method: pay.method, funded_by: 'account', account_id: acct, paid_date: f.invoice_date }] : []

@@ -1,253 +1,97 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, fmt } from './api'
+import { api } from './api'
+import { Icon } from './icons'
 
-export type PaletteAction = {
-  id: string
-  title: string
-  sub?: string
-  shortcut?: string[]
-  icon: string
-  category: string
-  run: () => void
-}
+type Item = { id: string; title: string; sub?: string; icon: string; group: string; hint?: string; run: () => void }
 
-export function CommandPalette({
-  isOpen,
-  onClose,
-  onToggleTheme,
-  onOpenHelp,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  onToggleTheme: () => void
-  onOpenHelp: () => void
+const TYPE_ICON: Record<string, string> = { customer: 'users', bill: 'file', receipt: 'wallet', expense: 'receipt', vendor: 'truck' }
+const TYPE_GROUP: Record<string, string> = { customer: 'Customers', bill: 'Bills', receipt: 'Receipts', expense: 'Expenses', vendor: 'Suppliers' }
+
+export function CommandPalette({ isOpen, onClose, onToggleTheme, onOpenHelp, isAdmin = false }: {
+  isOpen: boolean; onClose: () => void; onToggleTheme: () => void; onOpenHelp: () => void; isAdmin?: boolean
 }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [customers, setCustomers] = useState<any[]>([])
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [results, setResults] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (isOpen) {
-      setQuery('')
-      setCustomers([])
-      setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 30)
-    }
+    if (isOpen) { setQuery(''); setResults([]); setSel(0); setTimeout(() => inputRef.current?.focus(), 20) }
   }, [isOpen])
 
-  // Search customers when typing
   useEffect(() => {
-    if (!query.trim()) {
-      setCustomers([])
-      return
-    }
+    if (query.trim().length < 2) { setResults([]); return }
+    setLoading(true)
     const t = setTimeout(() => {
-      api(`/customers?q=${encodeURIComponent(query)}`)
-        .then(list => setCustomers(list.slice(0, 5)))
-        .catch(() => {})
-    }, 150)
+      api(`/search?q=${encodeURIComponent(query.trim())}`).then(r => setResults(r.results)).catch(() => setResults([])).finally(() => setLoading(false))
+    }, 160)
     return () => clearTimeout(t)
   }, [query])
 
+  useEffect(() => { (listRef.current?.querySelector('.cmd-item.selected') as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' }) }, [sel])
+
   if (!isOpen) return null
+  const go = (path: string) => () => { navigate(path); onClose() }
 
-  const staticActions: PaletteAction[] = [
-    {
-      id: 'nav-add-bill',
-      title: '+ Add Udhari (Credit) Bill',
-      sub: 'Record customer bill on credit',
-      shortcut: ['F3'],
-      icon: '📝',
-      category: 'Billing & Cashier',
-      run: () => { navigate('/udhari/new-bill'); onClose() },
-    },
-    {
-      id: 'nav-receive-payment',
-      title: 'Receive Payment',
-      sub: 'Collect cash/UPI against open bills',
-      shortcut: ['F4'],
-      icon: '💵',
-      category: 'Billing & Cashier',
-      run: () => { navigate('/receive'); onClose() },
-    },
-    {
-      id: 'nav-cash-closing',
-      title: 'Daily Closing & Cash Drawer',
-      sub: 'Physical cash count and day finalize',
-      shortcut: ['F8'],
-      icon: '🔒',
-      category: 'Operations',
-      run: () => { navigate('/cash'); onClose() },
-    },
-    {
-      id: 'nav-expenses',
-      title: 'Expenses & Vendor Payables',
-      sub: 'Record bills, gas, ingredients, salary',
-      shortcut: ['F9'],
-      icon: '🧾',
-      category: 'Operations',
-      run: () => { navigate('/expenses'); onClose() },
-    },
-    {
-      id: 'nav-dashboard',
-      title: 'Dashboard Overview',
-      sub: 'Today metrics, balances, alerts',
-      shortcut: ['Alt', '1'],
-      icon: '📊',
-      category: 'Navigation',
-      run: () => { navigate('/'); onClose() },
-    },
-    {
-      id: 'nav-udhari',
-      title: 'Udhari / Customer Directory',
-      sub: 'View all balances, send reminders',
-      shortcut: ['Alt', '2'],
-      icon: '👥',
-      category: 'Navigation',
-      run: () => { navigate('/udhari'); onClose() },
-    },
-    {
-      id: 'nav-purchases',
-      title: 'Purchases',
-      sub: 'Supplier invoices & stock entries',
-      shortcut: ['Alt', '7'],
-      icon: '🛒',
-      category: 'Navigation',
-      run: () => { navigate('/purchases'); onClose() },
-    },
-    {
-      id: 'nav-inventory',
-      title: 'Inventory & POS PDF Imports',
-      sub: 'Import Item Sales & Sales Summary',
-      shortcut: ['Alt', '8'],
-      icon: '📦',
-      category: 'Navigation',
-      run: () => { navigate('/inventory'); onClose() },
-    },
-    {
-      id: 'nav-reports',
-      title: 'Reports & P&L',
-      sub: 'Daybook, customer statement, item sales',
-      shortcut: ['Alt', '9'],
-      icon: '📈',
-      category: 'Navigation',
-      run: () => { navigate('/reports'); onClose() },
-    },
-    {
-      id: 'nav-settings',
-      title: 'Settings / Users / Backup',
-      sub: 'Admin config, database backup',
-      shortcut: ['Alt', '0'],
-      icon: '⚙️',
-      category: 'Navigation',
-      run: () => { navigate('/settings'); onClose() },
-    },
-    {
-      id: 'act-theme',
-      title: 'Toggle Dark / Light Theme',
-      sub: 'Switch POS display mode',
-      shortcut: ['Alt', 'T'],
-      icon: '🌓',
-      category: 'Appearance',
-      run: () => { onToggleTheme(); onClose() },
-    },
-    {
-      id: 'act-shortcuts',
-      title: 'Keyboard Shortcuts Help',
-      sub: 'Interactive keybindings cheat-sheet',
-      shortcut: ['F1', '?'],
-      icon: '⌨️',
-      category: 'Help',
-      run: () => { onClose(); onOpenHelp() },
-    },
+  const actions: Item[] = [
+    { id: 'a-bill', title: 'New udhari bill', sub: 'Record a credit bill', icon: 'plus', group: 'Actions', hint: 'F3', run: go('/udhari/new-bill') },
+    { id: 'a-receive', title: 'Receive payment', sub: 'Collect against open bills', icon: 'wallet', group: 'Actions', hint: 'F4', run: go('/receive') },
+    { id: 'a-close', title: 'Cash closing', sub: 'Count the drawer and close the day', icon: 'lock', group: 'Actions', hint: 'F8', run: go('/cash') },
+    { id: 'a-exp', title: 'Expenses & payables', sub: 'Add or pay an expense', icon: 'receipt', group: 'Actions', hint: 'F9', run: go('/expenses') },
+    { id: 'n-dash', title: 'Dashboard', icon: 'dashboard', group: 'Go to', hint: 'Alt+1', run: go('/') },
+    { id: 'n-cust', title: 'Customers & Udhari', icon: 'users', group: 'Go to', hint: 'Alt+2', run: go('/udhari') },
+    { id: 'n-pur', title: 'Purchases', icon: 'cart', group: 'Go to', hint: 'Alt+7', run: go('/purchases') },
+    { id: 'n-inv', title: 'Inventory & imports', icon: 'box', group: 'Go to', hint: 'Alt+8', run: go('/inventory') },
+    { id: 'n-rep', title: 'Reports', icon: 'chart', group: 'Go to', hint: 'Alt+9', run: go('/reports') },
+    ...(isAdmin ? [{ id: 'n-set', title: 'Settings, users & backup', icon: 'settings', group: 'Go to', hint: 'Alt+0', run: go('/settings') }] : []),
+    { id: 's-theme', title: 'Toggle light / dark theme', icon: 'sun', group: 'System', hint: 'Alt+T', run: () => { onToggleTheme(); onClose() } },
+    { id: 's-help', title: 'Keyboard shortcuts', icon: 'keyboard', group: 'System', hint: 'F1', run: () => { onClose(); onOpenHelp() } },
   ]
+  const q = query.trim().toLowerCase()
+  const found: Item[] = results.map(r => ({ id: `${r.type}-${r.id}`, title: r.title, sub: r.subtitle, icon: TYPE_ICON[r.type] || 'file',
+    group: TYPE_GROUP[r.type] || 'Results', run: go(r.url) }))
+  const items = [...found, ...actions.filter(a => !q || `${a.title} ${a.sub || ''}`.toLowerCase().includes(q))]
 
-  // Filter static actions based on query
-  const filteredActions = staticActions.filter(a => {
-    if (!query.trim()) return true
-    const q = query.toLowerCase()
-    return a.title.toLowerCase().includes(q) || (a.sub && a.sub.toLowerCase().includes(q)) || a.category.toLowerCase().includes(q)
-  })
-
-  // Customer actions from search
-  const customerActions: PaletteAction[] = customers.map(c => ({
-    id: `cust-${c.id}`,
-    title: c.name,
-    sub: `Phone: ${c.phone} · Outstanding: ${fmt(c.outstanding)}`,
-    icon: '👤',
-    category: 'Customers (Direct Jump)',
-    run: () => { navigate(`/udhari/${c.id}`); onClose() },
-  }))
-
-  const allItems: PaletteAction[] = [...customerActions, ...filteredActions]
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedIndex(prev => (prev + 1) % (allItems.length || 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedIndex(prev => (prev - 1 + allItems.length) % (allItems.length || 1))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      if (allItems[selectedIndex]) {
-        allItems[selectedIndex].run()
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
-    }
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => (s + 1) % Math.max(items.length, 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => (s - 1 + items.length) % Math.max(items.length, 1)) }
+    else if (e.key === 'Enter') { e.preventDefault(); items[sel]?.run() }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose() }
   }
 
+  let lastGroup = ''
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="cmd-palette" onClick={e => e.stopPropagation()}>
+    <div className="modal-back palette-back" onClick={onClose}>
+      <div className="cmd-palette" onClick={e => e.stopPropagation()} role="dialog" aria-label="Search and commands">
         <div className="cmd-input-wrap">
-          <span className="cmd-search-icon">🔍</span>
-          <input
-            ref={inputRef}
-            className="cmd-input"
-            placeholder="Search customer, jump to page, or run command… (↑↓ to select, ↵ to run)"
-            value={query}
-            onChange={e => { setQuery(e.target.value); setSelectedIndex(0) }}
-            onKeyDown={handleKeyDown}
-          />
-          <kbd>Esc</kbd>
+          <Icon name="search" size={18} />
+          <input ref={inputRef} className="cmd-input" placeholder="Search customers, bill or receipt numbers, expenses… or type a command"
+            value={query} onChange={e => { setQuery(e.target.value); setSel(0) }} onKeyDown={onKey} aria-label="Search" />
+          {loading ? <div className="spinner sm" /> : <kbd className="kbd-sm">Esc</kbd>}
         </div>
-
-        <div className="cmd-list">
-          {allItems.length === 0 ? (
-            <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)' }}>
-              No matches found for "{query}"
-            </div>
-          ) : (
-            allItems.map((item, idx) => {
-              const isSelected = idx === selectedIndex
-              return (
-                <div
-                  key={item.id}
-                  className={`cmd-item ${isSelected ? 'selected' : ''}`}
-                  onClick={item.run}
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                >
+        <div className="cmd-list" ref={listRef}>
+          {items.length === 0 && <div className="empty-mini">No matches for “{query}”</div>}
+          {items.map((it, idx) => {
+            const head = it.group !== lastGroup ? (lastGroup = it.group) : null
+            return (
+              <div key={it.id}>
+                {head && <div className="cmd-group">{head}</div>}
+                <div className={`cmd-item ${idx === sel ? 'selected' : ''}`} onClick={it.run} onMouseEnter={() => setSel(idx)}>
                   <div className="cmd-item-left">
-                    <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
-                    <div>
-                      <span style={{ fontWeight: 600 }}>{item.title}</span>
-                      {item.sub && <span className="cmd-item-sub">— {item.sub}</span>}
-                    </div>
+                    <span className="cmd-ico"><Icon name={it.icon} size={16} /></span>
+                    <div className="cmd-text"><span className="cmd-title">{it.title}</span>{it.sub && <span className="cmd-item-sub">{it.sub}</span>}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    {item.shortcut?.map((k, kIdx) => <kbd key={kIdx} className="kbd-sm">{k}</kbd>)}
-                  </div>
+                  {it.hint && <kbd className="kbd-sm">{it.hint}</kbd>}
                 </div>
-              )
-            })
-          )}
+              </div>
+            )
+          })}
         </div>
+        <div className="cmd-foot"><span><kbd className="kbd-sm">↑</kbd><kbd className="kbd-sm">↓</kbd> navigate</span><span><kbd className="kbd-sm">↵</kbd> open</span><span><kbd className="kbd-sm">/</kbd> or <kbd className="kbd-sm">Ctrl K</kbd> anywhere</span></div>
       </div>
     </div>
   )

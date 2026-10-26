@@ -26,8 +26,8 @@ function DayClose({ user }: { user: User }) {
   }, [d?.business_date, d?.status, d?.finalized_at])
   const locked = d?.status === 'finalized'
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }))
-  const save = () => submit(async () => setData(await api(`/day-closes/${date}`, { method: 'PUT', body: f })))
-  const finalize = () => submit(async () => setData(await api(`/day-closes/${date}/finalize`, { body: f })))
+  const save = () => submit('Draft saved', async () => setData(await api(`/day-closes/${date}`, { method: 'PUT', body: f })))
+  const finalize = () => submit('Day finalized', async () => setData(await api(`/day-closes/${date}/finalize`, { body: f })))
   // live preview (display only; the backend recomputes on save/finalize)
   const ledgerNet = d ? LINES.reduce((s, [k, , sign]) => s + sign * num(d.ledger[k]), 0) : 0
   const expectedPreview = num(f.opening_cash) + num(f.cash_sales) + ledgerNet
@@ -152,7 +152,7 @@ function DayClose({ user }: { user: User }) {
           </div>
           {!locked ? <p style={{ marginTop: 16 }}><button className="btn secondary" disabled={busy} onClick={save}>Save draft <kbd className="kbd-sm" style={{ marginLeft: 4 }}>Ctrl+↵</kbd></button> <button className="btn" disabled={busy} onClick={finalize}>Finalize day</button></p>
             : user.role === 'admin' && <div className="row" style={{ marginTop: 14 }}><Field label="Reopen reason"><input value={reopenReason} onChange={e => setReopenReason(e.target.value)} placeholder="Admin override reason" /></Field>
-              <button className="btn danger" disabled={!reopenReason.trim()} onClick={() => submit(async () => { setData(await api(`/day-closes/${date}/reopen`, { body: { reason: reopenReason } })); setReopenReason('') })}>Reopen day</button></div>}
+              <button className="btn danger" disabled={!reopenReason.trim()} onClick={() => submit('Day reopened', async () => { setData(await api(`/day-closes/${date}/reopen`, { body: { reason: reopenReason } })); setReopenReason('') })}>Reopen day</button></div>}
         </div>
       </>}
       <HistoryList reloadKey={d?.status} onPick={setDate} />
@@ -194,14 +194,14 @@ function Cashbook() {
           <Field label="Amount"><input inputMode="decimal" value={m.amount} onChange={e => setM({ ...m, amount: e.target.value })} /></Field>
           <Field label="Date"><input type="date" value={m.date} onChange={e => setM({ ...m, date: e.target.value })} /></Field>
           <Field label="Note (required)"><input value={m.note} onChange={e => setM({ ...m, note: e.target.value })} /></Field></div>
-          <button className="btn" disabled={busy} onClick={() => submit(async () => { await api('/cash-movements', { body: { ...m, account_id: Number(m.account_id) } }); setOk('Movement posted'); setM({ ...m, amount: '', note: '' }); reload() })}>Post</button></div>
+          <button className="btn" disabled={busy} onClick={() => submit('Cash movement posted', async () => { await api('/cash-movements', { body: { ...m, account_id: Number(m.account_id) } }); setOk('Movement posted'); setM({ ...m, amount: '', note: '' }); reload() })}>Post</button></div>
         <div className="card"><h3>Transfer between accounts</h3><div className="form-grid">
           <Field label="From"><select value={t.from_account_id} onChange={e => setT({ ...t, from_account_id: e.target.value })}><option value="">— select —</option>{(accounts || []).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
           <Field label="To"><select value={t.to_account_id} onChange={e => setT({ ...t, to_account_id: e.target.value })}><option value="">— select —</option>{(accounts || []).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
           <Field label="Amount"><input inputMode="decimal" value={t.amount} onChange={e => setT({ ...t, amount: e.target.value })} /></Field>
           <Field label="Date"><input type="date" value={t.date} onChange={e => setT({ ...t, date: e.target.value })} /></Field></div>
           <p className="muted">Transfers are neither sales nor expenses.</p>
-          <button className="btn" disabled={busy} onClick={() => submit(async () => { await api('/transfers', { body: { ...t, from_account_id: Number(t.from_account_id), to_account_id: Number(t.to_account_id) } }); setOk('Transfer posted'); setT({ ...t, amount: '' }); reload() })}>Transfer</button></div>
+          <button className="btn" disabled={busy} onClick={() => submit('Transfer posted', async () => { await api('/transfers', { body: { ...t, from_account_id: Number(t.from_account_id), to_account_id: Number(t.to_account_id) } }); setOk('Transfer posted'); setT({ ...t, amount: '' }); reload() })}>Transfer</button></div>
       </div>
     </>
   )

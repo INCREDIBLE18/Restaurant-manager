@@ -5,35 +5,68 @@ import { AccountSelect, Customer, CustomerPicker, MethodSelect, useAccounts } fr
 import { Badge, ErrorBox, Field, Modal, Notice, PrintButton, useAsync, useSubmit } from '../ui'
 import type { User } from '../App'
 
+type SortKey = 'name' | 'outstanding' | 'oldest' | 'last'
 export function Customers() {
+  const navigate = useNavigate()
   const [importing, setImporting] = useState(false)
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState('')
+  const [filter, setFilter] = useState(() => new URLSearchParams(window.location.search).get('filter') || '')
+  const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'outstanding', dir: -1 })
   const { data, error, loading } = useAsync(() => api(`/customers?q=${encodeURIComponent(q)}&filter=${filter}`), [q, filter])
+  const list = [...(data || [])].sort((a: any, b: any) => {
+    const v = (c: any) => sort.k === 'name' ? c.name.toLowerCase() : sort.k === 'outstanding' ? num(c.outstanding)
+      : sort.k === 'oldest' ? (c.oldest_open_bill_date || '9999') : (c.last_collection || '')
+    return v(a) < v(b) ? -sort.dir : v(a) > v(b) ? sort.dir : 0
+  })
+  const total = list.reduce((s: number, c: any) => s + num(c.outstanding), 0)
+  const owing = list.filter((c: any) => num(c.outstanding) > 0).length
+  const th = (k: SortKey, label: string, cls = '') => (
+    <th className={`sortable ${cls}`} onClick={() => setSort(s => ({ k, dir: s.k === k ? (s.dir === 1 ? -1 : 1) : (k === 'name' ? 1 : -1) }))}
+      aria-sort={sort.k === k ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}>{label}{sort.k === k ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}</th>
+  )
+  const age = (d?: string | null) => d ? Math.floor((Date.parse(todayIso()) - Date.parse(d)) / 86400000) : null
   return (
     <>
-      <div className="row between">
-        <h1>Udhari / Customers</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Link className="btn" to="/udhari/new-bill">+ Add udhari bill <kbd className="kbd-sm kbd-accent" style={{ marginLeft: 4 }}>F3</kbd></Link>
-          <Link className="btn secondary" to="/receive">Receive payment <kbd className="kbd-sm" style={{ marginLeft: 4 }}>F4</kbd></Link>
-          <button className="btn ghost" onClick={() => setImporting(true)}>Import old udhari (CSV)</button>
+      <div className="page-head">
+        <div><h1>Customers & Udhari</h1><p className="muted">Credit ledger per customer. Click a row to see bills, receipts and the statement.</p></div>
+        <div className="page-actions">
+          <button className="btn ghost" onClick={() => setImporting(true)}>Import old udhari</button>
+          <Link className="btn secondary" to="/receive">Receive payment</Link>
+          <Link className="btn" to="/udhari/new-bill">+ New udhari bill</Link>
         </div>
       </div>
       {importing && <ImportOld onClose={() => setImporting(false)} />}
-      <div className="row">
-        <Field label="Search name or phone"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by customer name or phone…" autoFocus /></Field>
-        <Field label="Show"><select value={filter} onChange={e => setFilter(e.target.value)}>
-          <option value="">All customers</option><option value="owing">Owing money</option><option value="overdue">Overdue</option></select></Field>
+      <div className="summary-strip">
+        <div><span>Total outstanding</span><b className={total > 0 ? 'neg' : ''}>{fmt(total)}</b></div>
+        <div><span>Customers owing</span><b>{owing}</b></div>
+        <div><span>Shown</span><b>{list.length}</b></div>
+      </div>
+      <div className="toolbar">
+        <Field label="Search"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Name or phone…" autoFocus /></Field>
+        <div className="chips" role="tablist" aria-label="Filter customers">
+          {[['', 'All'], ['owing', 'Owing money'], ['overdue', 'Overdue']].map(([v, l]) =>
+            <button key={v} role="tab" aria-selected={filter === v} className={`chip ${filter === v ? 'active' : ''}`} onClick={() => setFilter(v)}>{l}</button>)}
+        </div>
       </div>
       <ErrorBox msg={error} />
       <div className="table-wrap"><table>
-        <thead><tr><th>Customer</th><th>Phone</th><th className="n">Outstanding</th><th className="n">Advance</th><th>Oldest open bill</th><th>Last collection</th></tr></thead>
-        <tbody>{(data || []).map((c: any) => (
-          <tr key={c.id}><td><Link to={`/udhari/${c.id}`} style={{ fontWeight: 600 }}>{c.name}</Link></td><td>{c.phone}</td>
-            <td className={`n ${num(c.outstanding) > 0 ? 'neg' : ''}`}>{fmt(c.outstanding)}</td><td className="n">{num(c.advance) ? fmt(c.advance) : '—'}</td>
-            <td>{fmtDate(c.oldest_open_bill_date)}</td><td>{fmtDate(c.last_collection)}</td></tr>))}
-          {!loading && !(data || []).length && <tr><td colSpan={6} className="muted">No customers yet. Add an udhari bill to create one.</td></tr>}
+        <thead><tr>{th('name', 'Customer')}<th className="hide-mobile">Phone</th>{th('outstanding', 'Outstanding', 'n')}<th className="n hide-mobile">Advance</th>{th('oldest', 'Oldest open bill', 'hide-mobile')}{th('last', 'Last payment', 'hide-mobile')}</tr></thead>
+        <tbody>
+          {loading && !data && [1, 2, 3].map(i => <tr key={i}><td colSpan={6}><div className="skeleton" style={{ height: 18 }} /></td></tr>)}
+          {list.map((c: any) => {
+            const a = age(c.oldest_open_bill_date)
+            return (
+              <tr key={c.id} className="clickable" onClick={() => navigate(`/udhari/${c.id}`)}>
+                <td><Link to={`/udhari/${c.id}`} onClick={e => e.stopPropagation()} style={{ fontWeight: 600 }}>{c.name}</Link>{!c.active && <span className="badge"> inactive</span>}</td>
+                <td className="hide-mobile">{c.phone || <span className="muted">—</span>}</td>
+                <td className={`n ${num(c.outstanding) > 0 ? 'neg' : ''}`}>{fmt(c.outstanding)}{a != null && a > 30 && <div className="badge bad">{a} d old</div>}</td>
+                <td className="n hide-mobile">{num(c.advance) ? fmt(c.advance) : '—'}</td>
+                <td className="hide-mobile">{fmtDate(c.oldest_open_bill_date)}</td>
+                <td className="hide-mobile">{fmtDate(c.last_collection)}</td>
+              </tr>
+            )
+          })}
+          {!loading && !list.length && <tr><td colSpan={6}><div className="empty-state"><div>{q || filter ? 'No customers match.' : 'No customers yet — add an udhari bill or import your old udhari to get started.'}</div></div></td></tr>}
         </tbody></table></div>
     </>
   )
@@ -235,7 +268,7 @@ export function AddBill() {
   const linesTotal = lines.reduce((t, l) => t + num(l.quantity) * num(l.unit_price), 0)
   const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }))
   const outstanding = Math.max(0, num(f.total) - num(f.paid_now))
-  const save = () => submit(async () => {
+  const save = () => submit('Udhari bill saved', async () => {
     if (!cust) throw new Error('Select or create the customer first')
     let attachment = ''
     if (file) { const fd = new FormData(); fd.append('file', file); attachment = (await api('/attachments', { form: fd })).attachment }
@@ -585,7 +618,7 @@ function VoidModal({ target, onClose, onDone }: { target: { kind: string; id: nu
       <Notice kind="warn" msg="Voiding keeps the original record and posts a reversal; it cannot be undone." />
       <ErrorBox msg={error} />
       <Field label="Reason (required)"><input value={reason} onChange={e => setReason(e.target.value)} autoFocus /></Field>
-      <p><button className="btn danger" disabled={busy || !reason.trim()} onClick={() => submit(async () => { await api(`/${target.kind}/${target.id}/void`, { body: { reason } }); onDone() })}>Void</button></p>
+      <p><button className="btn danger" disabled={busy || !reason.trim()} onClick={() => submit('Voided — reversal posted', async () => { await api(`/${target.kind}/${target.id}/void`, { body: { reason } }); onDone() })}>Void</button></p>
     </Modal>
   )
 }
@@ -601,7 +634,7 @@ function EditCustomer({ c, onClose, onDone }: { c: any; onClose: () => void; onD
         <Field label="Address"><input value={f.address} onChange={e => setF({ ...f, address: e.target.value })} /></Field>
         <Field label="Notes"><input value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></Field></div>
       <label className="check"><input type="checkbox" checked={f.active} onChange={e => setF({ ...f, active: e.target.checked })} />Active</label>
-      <button className="btn" disabled={busy} onClick={() => submit(async () => { await api(`/customers/${c.id}`, { method: 'PATCH', body: f }); onDone() })}>Save</button>
+      <button className="btn" disabled={busy} onClick={() => submit('Customer updated', async () => { await api(`/customers/${c.id}`, { method: 'PATCH', body: f }); onDone() })}>Save</button>
     </Modal>
   )
 }

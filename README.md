@@ -23,7 +23,12 @@ This repository is **100% Vercel and Neon DB ready**! Both the React frontend an
    * `SECRET_KEY`: Any secure random secret string (e.g. 64 characters).
 4. Click **Deploy**!
 
-> **Note**: Database tables, default accounts, and settings are created automatically on the first request. The first user to sign in becomes the owner/admin.
+> **Database schema**: on Vercel the app does **not** create tables at startup (to keep cold starts fast). Apply migrations from your PC
+> before each deploy that adds tables: `cd backend; python -m alembic upgrade head` with `DATABASE_URL` pointing at Neon (use the **unpooled**
+> connection string for migrations). The first account created on the sign-in screen becomes the owner/admin.
+>
+> **Required**: `SECRET_KEY` must be set — the API refuses to start on PostgreSQL with the default key. Uploaded bill photos and report files are
+> stored **in the database** (table `stored_files`), so they survive redeploys and are included in every database backup.
 
 ## Run with Docker (Fastest Local/Server Deployment)
 Run the entire stack (FastAPI backend + built React POS frontend + SQLite persistence) with a single command:
@@ -44,7 +49,7 @@ Health check: `GET /api/v1/health`. API docs: `/docs`.
 
 ## ⌨️ POS Keyboard-First Navigation
 Designed for rapid cashier desk operation without lifting hands to the mouse:
-* **`Ctrl + K` or `F2`**: Omni-search command palette (instant customer search by phone/name, jump to any page)
+* **`Ctrl + K`, `F2` or `/`**: Global search — customers (name/phone), bill and receipt numbers, UPI references, expenses and suppliers — plus every page and command
 * **`F1` or `?`**: Interactive keyboard shortcuts reference
 * **`F3` / `Alt + 3`**: + Add Udhari Bill
 * **`F4` / `Alt + 4`**: Receive Payment / Settle bills with quick tender presets
@@ -56,6 +61,15 @@ Designed for rapid cashier desk operation without lifting hands to the mouse:
 
 Everything is in this folder: database `data/restaurant.db`, uploads `data/attachments/`, backups `data/backups/`. Copy `.env.example` → `.env` if you
 want to change settings (the setup script generates one). Never commit `.env`.
+
+## What the app does (at a glance)
+* **Dashboard**: alerts (unclosed cash days, overdue payables, duplicate/draft imports, overdue customers), KPIs, 14-day chart of collections vs credit
+  given vs expenses, udhari aging buckets (0-30/31-60/61-90/90+), top balances, payables due this week, account balances and a recent-activity feed.
+* **Customers & Udhari**: sortable list with totals and overdue badges, bill-wise ledger, receipts with allocation, statements, reminders, old-udhari CSV import.
+* **Reports** (grouped, with Today / 7 days / month / last month / financial-year presets, row filter, CSV and print): outstanding, **aging**, open bills,
+  collections, statement, **profit & loss estimate** (POS sales from day close — or Item Sales report when no POS total was typed — minus expenses incurred),
+  expenses by category, unpaid, paid-by-source, owner ledger, cashbook, daily closings, item sales, purchases, stock movements, import history.
+* Light/dark theme (follows the device by default), collapsible sidebar, mobile drawer, toasts for every save, offline indicator.
 
 ## Backup & restore
 * App: *Settings → Backups → Create backup now*, or `.\scripts\backup.ps1`. A zip (database snapshot + attachments + manifest) is written to
@@ -112,20 +126,16 @@ customer data is never sent to any model. Bind to `127.0.0.1` unless you deliber
 ## Known limitations
 * OCR output must be reviewed: it misreads some digits/letters (the bundled sample has a `9→6` and a `90→6` misread; the reconciliation checks
   flag both). Spaces in names are re-inserted heuristically.
-* PostgreSQL, Docker, and the Gemini provider were not exercised. Excel import, supplier-bill PDF import, recipes/BOM, WhatsApp reminders are not built.
+* Docker was not exercised. The suite last ran on PostgreSQL 18 on 2026-10-20; changes since then were tested on SQLite only. Gemini reading works but was inaccurate on the sample report.
+  Excel import, supplier-bill PDF import, recipes/BOM and automatic WhatsApp sending are not built (reminder text is copied for you to send).
+* The P&L report is an operational estimate (no stock valuation, depreciation or GST).
 * Posted bills cannot be edited; void and re-enter. Staff cannot void.
 * Money is shown/typed in ₹ with 2 decimals; the browser does display-only formatting.
 
-## Test results recorded for this build (2026-10-19, Windows 11, Python 3.11, Node 24)
+## Test results recorded for this build (2026-10-26, Windows 11, Python 3.11, Node 24)
 | Suite | Result |
 |---|---|
-| Backend `pytest` (all, incl. 2 real-OCR tests on the reference PDFs) | **40 passed** in 5m30s |
-| Frontend `tsc --noEmit` | clean |
-| Frontend `vitest` | **6 passed** |
-| Alembic `upgrade head` on a fresh SQLite DB | OK (covered by a test) |
-| Manual end-to-end (real server, throw-away DB): demo sequence, restart persistence, verified backup, import review page loads | OK |
-
-Covered: spec acceptance scenarios 1-34 (credit ledger, owner funding, cash closing, imports/inventory, permissions, audit, CSV=screen, backup + restore to a throw-away DB).
-Not covered / not run: PostgreSQL, Docker, Gemini live API, mobile-layout visual check (browser pane was hidden), clicking through every form in a browser
-(forms were verified through the API and 6 component tests), load/concurrency testing, login rate-limiting (now implemented: 5 failures lock a user+IP for 5 minutes).
-
+| Backend `pytest -m "not slow"` (SQLite) | **50 passed** |
+| Frontend `tsc --noEmit` + `vitest` | clean · **10 passed** |
+| Real-PDF OCR tests (`-m slow`) | not re-run this round (parser unchanged; last run 2 passed) |
+| Manual browser check on a throw-away DB | every page loads without errors at desktop and phone width, light and dark |

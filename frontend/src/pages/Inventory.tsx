@@ -70,8 +70,8 @@ function ImportReview({ id, user, items, onClose }: { id: number; user: User; it
         {b.duplicate_of_id && <><Notice kind="warn" msg={`This looks like a duplicate of import #${b.duplicate_of_id}. Importing again is blocked.`} />
           {user.role === 'admin' && <><label className="check"><input type="checkbox" checked={override} onChange={e => setOverride(e.target.checked)} />Admin override: import anyway (deliberate)</label>
             {override && <Field label="Override reason (required)"><input value={reason} onChange={e => setReason(e.target.value)} /></Field>}</>}</>}
-        <p><button className="btn" disabled={busy || s.unresolved > 0} onClick={() => submit(async () => { setData(await api(`/imports/${id}/confirm`, { body: { acknowledge_warnings: ack, override_duplicate: override, override_reason: reason } })) })}>Confirm import</button>{' '}
-          <button className="btn ghost" disabled={busy} onClick={() => submit(async () => { await api(`/imports/${id}/reject`, { body: { reason: 'Rejected by reviewer' } }); onClose() })}>Reject</button>
+        <p><button className="btn" disabled={busy || s.unresolved > 0} onClick={() => submit('Import confirmed', async () => { setData(await api(`/imports/${id}/confirm`, { body: { acknowledge_warnings: ack, override_duplicate: override, override_reason: reason } })) })}>Confirm import</button>{' '}
+          <button className="btn ghost" disabled={busy} onClick={() => submit('Import rejected', async () => { await api(`/imports/${id}/reject`, { body: { reason: 'Rejected by reviewer' } }); onClose() })}>Reject</button>
           {s.unresolved > 0 && <span className="neg"> Resolve {s.unresolved} unmapped row(s) first (map, create new item, or untick “Import?”).</span>}</p>
         <p className="muted">Nothing is saved to sales, items or stock until you press Confirm import.</p></div>}
       {b.status === 'confirmed' && user.role === 'admin' && <ReverseBox id={id} onDone={reload} />}
@@ -83,7 +83,7 @@ function ReverseBox({ id, onDone }: { id: number; onDone: () => void }) {
   const [reason, setReason] = useState('')
   const { error, submit } = useSubmit()
   return <div className="card"><ErrorBox msg={error} /><div className="row"><Field label="Reverse this import (admin) — reason"><input value={reason} onChange={e => setReason(e.target.value)} /></Field>
-    <button className="btn danger" disabled={!reason.trim()} onClick={() => submit(async () => { await api(`/imports/${id}/reverse`, { body: { reason } }); onDone() })}>Reverse</button></div></div>
+    <button className="btn danger" disabled={!reason.trim()} onClick={() => submit('Import reversed', async () => { await api(`/imports/${id}/reverse`, { body: { reason } }); onDone() })}>Reverse</button></div></div>
 }
 
 function Imports({ user }: { user: User }) {
@@ -138,7 +138,7 @@ function Catalogue() {
       <div className="row"><Field label="Search"><input value={q} onChange={e => setQ(e.target.value)} /></Field>
         <label className="check"><input type="checkbox" checked={pending} onChange={e => setPending(e.target.checked)} />Pending review only</label>
         <Field label="Add item"><input value={name} onChange={e => setName(e.target.value)} placeholder="Item name" /></Field>
-        <button className="btn" onClick={() => submit(async () => { await api('/items', { body: { name } }); setName(''); reload() })}>Add</button></div>
+        <button className="btn" onClick={() => submit('Item added', async () => { await api('/items', { body: { name } }); setName(''); reload() })}>Add</button></div>
       <ErrorBox msg={error || e2} />
       <div className="table-wrap"><table><thead><tr><th>Item</th><th>Category</th><th>Kind</th><th>Base unit</th><th>UOM hint</th><th>Track stock</th><th>Low-stock at</th><th>Status</th></tr></thead>
         <tbody>{(data || []).map((i: any) => <tr key={i.id}><td>{i.name}{i.aliases.length > 0 && <div className="muted" style={{ fontSize: '.75rem' }}>aka {i.aliases.join(', ')}</div>}</td><td>{i.category}</td>
@@ -173,8 +173,8 @@ function Stock({ user }: { user: User }) {
           <Field label="Reason"><input value={f.reason} onChange={e => setF({ ...f, reason: e.target.value })} /></Field>
           <Field label="Movement type"><select value={f.movement_type} onChange={e => setF({ ...f, movement_type: e.target.value })}>
             <option value="wastage">Wastage (out)</option><option value="adjustment_in">Adjustment in</option><option value="adjustment_out">Adjustment out</option><option value="supplier_return">Supplier return (out)</option><option value="sale_return">Sale return (in)</option></select></Field></div>
-        <button className="btn" onClick={() => submit(async () => { await api('/inventory/adjustments', { body: { ...f, item_id: Number(f.item_id) } }); reload(); rm() })}>Post adjustment</button>{' '}
-        {user.role === 'admin' && <button className="btn secondary" onClick={() => submit(async () => { await api('/inventory/opening-counts', { body: { item_id: Number(f.item_id), quantity: f.quantity, date: f.date, reason: f.reason || 'Manually counted' } }); reload(); rm() })}>Record verified opening count (admin)</button>}
+        <button className="btn" onClick={() => submit('Adjustment posted', async () => { await api('/inventory/adjustments', { body: { ...f, item_id: Number(f.item_id) } }); reload(); rm() })}>Post adjustment</button>{' '}
+        {user.role === 'admin' && <button className="btn secondary" onClick={() => submit('Opening count recorded', async () => { await api('/inventory/opening-counts', { body: { item_id: Number(f.item_id), quantity: f.quantity, date: f.date, reason: f.reason || 'Manually counted' } }); reload(); rm() })}>Record verified opening count (admin)</button>}
         <p className="muted">Stock is never typed directly: opening counts and adjustments are ledger entries with a reason. Figures from the Stock Position PDF are never used.</p></div>
       <h2>Movement ledger</h2>
       <div className="table-wrap"><table><thead><tr><th>Date</th><th>Item</th><th>Type</th><th className="n">Qty</th><th>Source</th><th>Reason</th></tr></thead>

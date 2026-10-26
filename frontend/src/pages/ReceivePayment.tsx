@@ -46,7 +46,7 @@ export default function ReceivePayment() {
     }
   }
 
-  const save = () => submit(async () => {
+  const save = () => submit('Receipt saved', async () => {
     if (!cust) throw new Error('Select a customer')
     const allocations = Object.entries(alloc).filter(([, v]) => num(v) > 0).map(([bill_id, amt]) => ({ bill_id: Number(bill_id), amount: amt }))
     if (allocated > num(amount)) throw new Error('Allocated amount is more than the amount received')

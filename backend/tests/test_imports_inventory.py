@@ -268,7 +268,7 @@ def test_34_backup_and_restore(admin, tmp_path):
     backup.restore_backup(get_settings().backups_dir / name, target_db, target_att)
     con = sqlite3.connect(target_db)
     assert con.execute("select name from customers").fetchall() == [("Backup Test",)]
-    assert any(target_att.iterdir())
+    assert con.execute("select count(*) from stored_files").fetchone()[0] >= 1  # uploads travel inside the DB
     with pytest.raises(FileExistsError):
         backup.restore_backup(get_settings().backups_dir / name, target_db, target_att)
 

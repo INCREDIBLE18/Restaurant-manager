@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useState } from 'react'
 import { ApiError } from './api'
+import { toast } from './toast'
 
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null)
@@ -81,9 +82,11 @@ export function Badge({ status }: { status: string }) {
 export function useSubmit() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const submit = async (fn: () => Promise<unknown>) => {
+  /** submit(fn) or submit('Saved', fn) — the message is shown as a toast on success. */
+  const submit = async (a: string | (() => Promise<unknown>), b?: () => Promise<unknown>) => {
+    const fn = (typeof a === 'string' ? b : a) as () => Promise<unknown>
     setBusy(true); setError('')
-    try { await fn(); return true }
+    try { await fn(); if (typeof a === 'string') toast(a); return true }
     catch (e) { setError(e instanceof ApiError ? e.message : String(e)); return false }
     finally { setBusy(false) }
   }
@@ -97,7 +100,7 @@ export function Pager({ children }: { children: ReactNode }) {
 export function PrintButton() {
   return (
     <button className="btn ghost no-print" onClick={() => window.print()}>
-      <span>🖨️</span> Print
+      Print
     </button>
   )
 }

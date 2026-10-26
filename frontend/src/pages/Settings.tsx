@@ -50,7 +50,7 @@ export default function Settings() {
       </div>
       <div className="card"><h3>Restaurant settings</h3>
         <div className="form-grid">{Object.keys(SETTING_LABELS).map(k => <Field key={k} label={SETTING_LABELS[k]}><input value={f[k] ?? ''} onChange={e => setF({ ...f, [k]: e.target.value })} /></Field>)}</div>
-        <button className="btn" onClick={() => submit(async () => { const body: any = {}; Object.keys(SETTING_LABELS).forEach(k => body[k] = f[k]); await api('/settings', { method: 'PUT', body }); setMsg('Settings saved'); reload() })}>Save settings</button>
+        <button className="btn" onClick={() => submit('Settings saved', async () => { const body: any = {}; Object.keys(SETTING_LABELS).forEach(k => body[k] = f[k]); await api('/settings', { method: 'PUT', body }); setMsg('Settings saved'); reload() })}>Save settings</button>
         <p className="muted">AI-assisted PDF reading (Gemini) is {s?.gemini_enabled === 'true' ? 'enabled' : 'disabled'}; it is controlled by environment variables on the server (see .env.example) and its output always requires human review.</p></div>
       <div className="card"><h3>Accounts</h3>
         <div className="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Physical cash</th><th className="n">Opening balance</th><th className="n">Balance</th><th>Active</th></tr></thead>
@@ -60,7 +60,7 @@ export default function Settings() {
         <div className="form-grid"><Field label="New account name"><input value={a.name} onChange={e => setA({ ...a, name: e.target.value })} /></Field>
           <Field label="Type"><select value={a.type} onChange={e => setA({ ...a, type: e.target.value })}>{['cash', 'bank', 'upi', 'card', 'owner_personal', 'staff_advance', 'other'].map(t => <option key={t}>{t}</option>)}</select></Field>
           <Field label="Opening balance"><input value={a.opening_balance} onChange={e => setA({ ...a, opening_balance: e.target.value })} /></Field></div>
-        <button className="btn secondary" onClick={() => submit(async () => { await api('/accounts', { body: a }); setA({ name: '', type: 'bank', opening_balance: '' }); ra() })}>Add account</button></div>
+        <button className="btn secondary" onClick={() => submit('Account added', async () => { await api('/accounts', { body: a }); setA({ name: '', type: 'bank', opening_balance: '' }); ra() })}>Add account</button></div>
       <div className="card"><h3>Users</h3>
         <div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Active</th><th>Last login</th></tr></thead>
           <tbody>{(users || []).map((x: any) => <tr key={x.id}><td>{x.username} <span className="muted">{x.full_name}</span></td><td>{x.role}</td>
@@ -69,11 +69,11 @@ export default function Settings() {
           <Field label="Full name"><input value={u.full_name} onChange={e => setU({ ...u, full_name: e.target.value })} /></Field>
           <Field label="Password (min 8)"><input type="password" value={u.password} onChange={e => setU({ ...u, password: e.target.value })} /></Field>
           <Field label="Role"><select value={u.role} onChange={e => setU({ ...u, role: e.target.value })}><option value="staff">Staff / Cashier</option><option value="admin">Admin / Owner</option></select></Field></div>
-        <button className="btn secondary" onClick={() => submit(async () => { await api('/users', { body: u }); setU({ username: '', password: '', full_name: '', role: 'staff' }); ru() })}>Add user</button></div>
+        <button className="btn secondary" onClick={() => submit('User added', async () => { await api('/users', { body: u }); setU({ username: '', password: '', full_name: '', role: 'staff' }); ru() })}>Add user</button></div>
       <div className="card"><h3>Change my password</h3><div className="form-grid">
         <Field label="Current password"><input type="password" value={pw.old_password} onChange={e => setPw({ ...pw, old_password: e.target.value })} /></Field>
         <Field label="New password (min 8)"><input type="password" value={pw.new_password} onChange={e => setPw({ ...pw, new_password: e.target.value })} /></Field></div>
-        <button className="btn secondary" onClick={() => submit(async () => { await api('/auth/change-password', { body: pw }); setPw({ old_password: '', new_password: '' }); setMsg('Password changed') })}>Change password</button></div>
+        <button className="btn secondary" onClick={() => submit('Password changed', async () => { await api('/auth/change-password', { body: pw }); setPw({ old_password: '', new_password: '' }); setMsg('Password changed') })}>Change password</button></div>
       <div className="card"><h3>Backups</h3>
         <button className="btn" onClick={() => submit(async () => { const r = await api('/backups', { body: {} }); setMsg(`Backup created and verified: ${r.name} (${(r.size / 1024).toFixed(0)} KB, ${r.attachments} attachment(s))`); rb() })}>Create backup now</button>
         <div className="table-wrap" style={{ marginTop: 10 }}><table><thead><tr><th>File</th><th>Size</th><th>Created</th></tr></thead>

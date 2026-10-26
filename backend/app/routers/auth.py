@@ -14,6 +14,7 @@ from ..core import (
     verify_password,
 )
 from ..db import get_db
+from ..files import file_response, save_file
 from ..ledger import account_balance, batch_account_balances
 from ..models import Account, AppSetting, AuditLog, User, utcnow
 
@@ -230,7 +231,7 @@ def edit_account(aid: int, body: dict, admin: User = Depends(admin_user), db: Se
 
 # ---- attachments
 @router.post("/attachments")
-async def upload(file: UploadFile = File(...), user: User = Depends(current_user)):
+async def upload(file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXT:
         err(422, f"File type {ext or '(none)'} not allowed")
@@ -240,18 +241,16 @@ async def upload(file: UploadFile = File(...), user: User = Depends(current_user
     if not data:
         err(422, "Empty file")
     name = f"{uuid.uuid4().hex}{ext}"
-    (get_settings().attachments_dir / name).write_bytes(data)
+    save_file(db, name, data, file.filename or "", user.id)
+    db.commit()
     return {"attachment": name, "filename": file.filename, "size": len(data)}
 
 
 @router.get("/attachments/{name}")
-def download(name: str, _: User = Depends(current_user)):
+def download(name: str, _: User = Depends(current_user), db: Session = Depends(get_db)):
     if not re.fullmatch(r"[0-9a-f]{32}\.[a-z0-9]{2,5}", name):
         err(404, "Not found")
-    path = get_settings().attachments_dir / name
-    if not path.is_file():
-        err(404, "Not found")
-    return FileResponse(path)
+    return file_response(db, name)
 
 
 @router.get("/audit")

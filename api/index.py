@@ -17,6 +17,15 @@ for sub in ["", "attachments", "backups"]:
     except Exception:
         pass
 
+DEBUG = os.environ.get("ROM_DEBUG", "").lower() in ("1", "true", "yes")
+
+
+def _body(msg: str, trace: str) -> bytes:
+    # Tracebacks expose code paths and config; return them only when ROM_DEBUG is explicitly on.
+    print(trace, file=sys.stderr)
+    return json.dumps({"detail": msg, **({"trace": trace} if DEBUG else {})}).encode()
+
+
 import_err = None
 try:
     from backend.app.main import app as fastapi_app
@@ -29,7 +38,7 @@ class EntryApp:
     async def __call__(self, scope, receive, send):
         if import_err is not None:
             if scope.get("type") == "http":
-                body = json.dumps({"error": "Backend import failed", "trace": import_err}).encode()
+                body = _body("Service is starting up incorrectly; check server logs.", import_err)
                 await send({
                     "type": "http.response.start",
                     "status": 500,
@@ -57,7 +66,7 @@ class EntryApp:
         except Exception:
             err_trace = traceback.format_exc()
             if scope.get("type") == "http":
-                body = json.dumps({"error": "Request execution failed", "trace": err_trace}).encode()
+                body = _body("Unexpected server error; it has been logged.", err_trace)
                 await send({
                     "type": "http.response.start",
                     "status": 500,
